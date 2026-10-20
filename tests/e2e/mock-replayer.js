@@ -13,7 +13,21 @@
 
 	AFRAME.registerComponent('settings', {
 		init() {
-			this.settings = {bombColor: '#000000', wallColor: '#f01978', backgroundColor: '#000000', redEventColor: '#f01978', blueEventColor: '#2064a8', redBGColor: '#ff1f81', blueBGColor: '#2851b8', trailLength: 20, soundDelay: 0, fov: 60};
+			this.settings = {
+				bombColor: '#000000',
+				wallColor: '#f01978',
+				trailLength: 20,
+				soundDelay: 0,
+				fov: 60,
+				showHud: true,
+				autoSpeedControls: false,
+				slowOnMiss: true,
+				slowOnBadCut: true,
+				slowOnBomb: true,
+				offsetSlowBeginning: -0.3,
+				offsetSlowEnding: 0.3,
+				speedSlow: 0.2,
+			};
 			this.syncCount = 0;
 		},
 		sync() {
@@ -49,7 +63,10 @@
 	AFRAME.registerComponent('song-controls', {
 		init() {
 			this.song = this.el.components.song;
+			this.settings = this.el.components.settings;
 			this.baseSongSpeed = 1;
+			this.missWindows = [];
+			this.replayData = null;
 			const scene = this.el;
 			scene.addEventListener('pausegame', () => {
 				this.song.base = this.song.getCurrentTime();
@@ -61,7 +78,33 @@
 				scene.systems.state.state.isPlaying = true;
 				scene.systems.state.state.isPaused = false;
 			});
+			scene.addEventListener('replayloaded', e => {
+				this.replayData = e.detail;
+				this.computeMissWindows();
+			});
+			scene.addEventListener('settingsChanged', () => this.computeMissWindows());
 			window.__seeks = [];
+
+			// Context menu and "click outside closes menus", as in the official song-controls.
+			document.addEventListener('click', evt => {
+				document.getElementById('ctxMenu').style.display = 'none';
+				for (const [id, opener] of [
+					['settingsContainer', '.controlsSettings'],
+					['cameraSettingsContainer', '.controlsCamera'],
+				]) {
+					if (!evt.target.closest('#' + id) && !evt.target.closest(opener)) document.getElementById(id).classList.remove('settingsActive');
+				}
+			});
+			document.querySelector('.controlsSettings').addEventListener('click', () => document.getElementById('settingsContainer').classList.toggle('settingsActive'));
+			document.querySelector('.controlsCamera').addEventListener('click', () => document.getElementById('cameraSettingsContainer').classList.toggle('settingsActive'));
+			document.getElementById('main-canvas').addEventListener('contextmenu', event => {
+				event.preventDefault();
+				scene.emit('contextmenuopen', null, false);
+				const menu = document.getElementById('ctxMenu');
+				menu.style.display = 'block';
+				menu.style.left = event.pageX - 10 + 'px';
+				menu.style.top = event.pageY - 10 + 'px';
+			});
 		},
 		seek(t) {
 			window.__seeks.push(t);
@@ -69,9 +112,29 @@
 			this.song.startedAt = performance.now();
 			setTimeout(() => this.el.emit('timechanged', {newTime: t}), 5);
 		},
+		// Same logic as the official computeMissWindows().
+		computeMissWindows() {
+			this.missWindows = [];
+			if (!this.replayData || !this.replayData.notes) return;
+			const s = this.settings.settings;
+			if (!s.autoSpeedControls) return;
+			const startOffset = parseFloat(s.offsetSlowBeginning || 0);
+			const endOffset = parseFloat(s.offsetSlowEnding || 0);
+			for (const n of this.replayData.notes) {
+				if ((n.score === -3 && s.slowOnMiss) || (n.score === -2 && s.slowOnBadCut) || (n.score === -4 && s.slowOnBomb)) {
+					const start = Math.max(0, n.time + startOffset);
+					this.missWindows.push([start, Math.max(start, n.time + endOffset)]);
+				}
+			}
+			this.missWindows.sort((a, b) => a[0] - b[0]);
+		},
 		tick() {
-			// mirrors updateAutoSpeedState(): re-applies baseSongSpeed every frame
-			if (this.song.speed !== this.baseSongSpeed) this.song.setPlaybackRate(this.baseSongSpeed);
+			// mirrors updateAutoSpeedState(): re-applies the speed every frame
+			const s = this.settings.settings;
+			const now = this.song.getCurrentTime();
+			const slow = s.autoSpeedControls && this.missWindows.some(w => now >= w[0] && now <= w[1]);
+			const target = slow ? this.baseSongSpeed * s.speedSlow : this.baseSongSpeed;
+			if (this.song.speed !== target) this.song.setPlaybackRate(target);
 		},
 	});
 

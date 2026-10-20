@@ -50,12 +50,15 @@
 		M: 'mute',
 		H: 'hide controls',
 		I: 'skip intro',
-		N: 'next replay',
-		P: 'previous replay',
+		'Shift+N': 'next replay',
+		'Shift+P': 'previous replay',
 		W: 'camera forward',
 		A: 'camera left',
 		S: 'camera back',
 		D: 'camera right',
+		X: 'camera down',
+		C: 'camera up',
+		F2: 'hotkey help',
 	};
 
 	const state = {
@@ -543,42 +546,42 @@
 		const box = document.querySelector('.visuals-preview');
 		if (!box) return;
 		const v = get('visuals');
-		const leftSaber = v.sabers.override ? v.sabers.leftColor : '#bf2121';
-		const rightSaber = v.sabers.override ? v.sabers.rightColor : '#335aff';
+		// Saber colours come from the replayer's own Colors settings; preview its defaults.
+		const leftSaber = '#bf2121';
+		const rightSaber = '#335aff';
 		const leftNote = v.notes.override ? v.notes.left : leftSaber;
 		const rightNote = v.notes.override ? v.notes.right : rightSaber;
 		const trailL = v.sabers.trailOverride && !v.sabers.trailMatchSaber ? v.sabers.leftTrailColor : leftSaber;
 		const trailR = v.sabers.trailOverride && !v.sabers.trailMatchSaber ? v.sabers.rightTrailColor : rightSaber;
 		const trailOp = v.sabers.trailOverride ? U.clamp(v.sabers.trailOpacity / 100, 0, 1) * 0.6 : 0.45;
-		const env = v.environment.override ? v.environment : {background: '#000000', lightLeft: '#f01978', lightRight: '#2064a8', backglow: '#2851b8', walls: '#f01978'};
-		const bomb = v.notes.bombOverride ? v.notes.bomb : '#1a1a1a';
+		const trailW = 16 * (v.sabers.trailOverride ? v.sabers.trailWidth || 90 : 90) / 100;
 		const chain = v.notes.chainOverride ? v.notes.chain : leftNote;
 		const arc = v.notes.arcOverride ? v.notes.arc : rightNote;
-		const thick = (v.sabers.thickness / 100) * ({thin: 0.45, thick: 1.9, neon: 0.85, particle: 0.6}[v.sabers.style] || 1);
+		const thick = {neon: 0.85, particle: 0.6}[v.sabers.style] || 1;
 		const glow = (v.sabers.glowIntensity / 100) * (v.sabers.style === 'neon' ? 4 : 1);
 		const heat = v.accuracyHeat.enabled;
 		const noteFill = (base, score) => (heat ? (score >= 115 ? v.accuracyHeat.c115 : score >= 110 ? v.accuracyHeat.c110 : score >= 105 ? v.accuracyHeat.c105 : v.accuracyHeat.c100) : base);
+		const vis = v.visibility;
+		const core = color => (v.sabers.style === 'neon' ? U.mixColors(color, '#ffffff', 0.35) : '#ffffff');
 		box.innerHTML = `
 <svg viewBox="0 0 600 220" xmlns="http://www.w3.org/2000/svg">
 	<defs>
 		<filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${2 + glow * 3}"/></filter>
-		<radialGradient id="bg" cx="50%" cy="20%" r="80%"><stop offset="0" stop-color="${env.backglow}" stop-opacity="0.55"/><stop offset="1" stop-color="${env.background}"/></radialGradient>
+		<radialGradient id="bg" cx="50%" cy="20%" r="80%"><stop offset="0" stop-color="#2851b8" stop-opacity="0.55"/><stop offset="1" stop-color="#000000"/></radialGradient>
 	</defs>
 	<rect width="600" height="220" fill="url(#bg)"/>
-	<line x1="40" y1="0" x2="150" y2="220" stroke="${env.lightLeft}" stroke-width="3" opacity="0.8"/>
-	<line x1="560" y1="0" x2="450" y2="220" stroke="${env.lightRight}" stroke-width="3" opacity="0.8"/>
-	<rect x="470" y="70" width="40" height="110" fill="${env.walls}" opacity="0.35" stroke="${env.walls}"/>
-	<path d="M 230 60 Q 300 10 380 60" stroke="${arc}" stroke-width="5" fill="none" opacity="0.8"/>
-	<rect x="200" y="70" width="44" height="44" rx="6" fill="${noteFill(leftNote, 115)}"/><path d="M 210 80 L 234 80 L 222 92 Z" fill="#fff"/>
-	<rect x="356" y="70" width="44" height="44" rx="6" fill="${noteFill(rightNote, 108)}"/><path d="M 366 104 L 390 104 L 378 92 Z" fill="#fff"/>
-	<circle cx="300" cy="92" r="18" fill="${bomb}" stroke="#666"/>
-	<rect x="262" y="130" width="22" height="12" rx="3" fill="${chain}"/><rect x="288" y="140" width="22" height="12" rx="3" fill="${chain}"/>
-	<path d="M 120 210 Q 150 150 210 140" stroke="${trailL}" stroke-width="${16 * (v.sabers.trailWidth || 90) / 100}" fill="none" opacity="${trailOp}" stroke-linecap="round"/>
-	<path d="M 480 210 Q 450 150 390 140" stroke="${trailR}" stroke-width="${16 * (v.sabers.trailWidth || 90) / 100}" fill="none" opacity="${trailOp}" stroke-linecap="round"/>
-	<line x1="160" y1="215" x2="230" y2="135" stroke="${leftSaber}" stroke-width="${8 * thick}" filter="url(#glow)" opacity="${Math.min(1, 0.3 + glow * 0.3)}"/>
-	<line x1="440" y1="215" x2="370" y2="135" stroke="${rightSaber}" stroke-width="${8 * thick}" filter="url(#glow)" opacity="${Math.min(1, 0.3 + glow * 0.3)}"/>
-	<line x1="160" y1="215" x2="230" y2="135" stroke="${v.sabers.style === 'neon' ? U.mixColors(leftSaber, '#ffffff', 0.35) : '#ffffff'}" stroke-width="${3 * thick}"/>
-	<line x1="440" y1="215" x2="370" y2="135" stroke="${v.sabers.style === 'neon' ? U.mixColors(rightSaber, '#ffffff', 0.35) : '#ffffff'}" stroke-width="${3 * thick}"/>
+	<line x1="40" y1="0" x2="150" y2="220" stroke="#f01978" stroke-width="3" opacity="0.8"/>
+	<line x1="560" y1="0" x2="450" y2="220" stroke="#2064a8" stroke-width="3" opacity="0.8"/>
+	${vis.walls ? '<rect x="470" y="70" width="40" height="110" fill="#f01978" opacity="0.35" stroke="#f01978"/>' : ''}
+	${vis.arcs ? `<path d="M 230 60 Q 300 10 380 60" stroke="${arc}" stroke-width="5" fill="none" opacity="0.8"/>` : ''}
+	${vis.notes ? `<rect x="200" y="70" width="44" height="44" rx="6" fill="${noteFill(leftNote, 115)}"/><path d="M 210 80 L 234 80 L 222 92 Z" fill="#fff"/>` : ''}
+	${vis.notes ? `<rect x="356" y="70" width="44" height="44" rx="6" fill="${noteFill(rightNote, 108)}"/><path d="M 366 104 L 390 104 L 378 92 Z" fill="#fff"/>` : ''}
+	${vis.bombs ? '<circle cx="300" cy="92" r="18" fill="#1a1a1a" stroke="#666"/>' : ''}
+	${vis.chains ? `<rect x="262" y="130" width="22" height="12" rx="3" fill="${chain}"/><rect x="288" y="140" width="22" height="12" rx="3" fill="${chain}"/>` : ''}
+	${vis.trails ? `<path d="M 120 210 Q 150 150 210 140" stroke="${trailL}" stroke-width="${trailW}" fill="none" opacity="${trailOp}" stroke-linecap="round"/>` : ''}
+	${vis.trails ? `<path d="M 480 210 Q 450 150 390 140" stroke="${trailR}" stroke-width="${trailW}" fill="none" opacity="${trailOp}" stroke-linecap="round"/>` : ''}
+	${vis.leftSaber ? `<line x1="160" y1="215" x2="230" y2="135" stroke="${leftSaber}" stroke-width="${8 * thick}" filter="url(#glow)" opacity="${Math.min(1, 0.3 + glow * 0.3)}"/><line x1="160" y1="215" x2="230" y2="135" stroke="${core(leftSaber)}" stroke-width="${3 * thick}"/>` : ''}
+	${vis.rightSaber ? `<line x1="440" y1="215" x2="370" y2="135" stroke="${rightSaber}" stroke-width="${8 * thick}" filter="url(#glow)" opacity="${Math.min(1, 0.3 + glow * 0.3)}"/><line x1="440" y1="215" x2="370" y2="135" stroke="${core(rightSaber)}" stroke-width="${3 * thick}"/>` : ''}
 </svg>`;
 	}
 
@@ -630,7 +633,7 @@
 		if (!buffer) return;
 		const src = ac.createBufferSource();
 		const gain = ac.createGain();
-		gain.gain.value = ((Number(get('audio.master')) || 0) / 100) * (volume / 100);
+		gain.gain.value = U.clamp(volume / 100, 0, 1.5);
 		src.buffer = buffer;
 		src.connect(gain).connect(ac.destination);
 		src.start();
@@ -698,7 +701,7 @@
 							set('camera.presets', next);
 						},
 					},
-					['static', 'free', 'orbit', 'follow', 'fpvSmooth', 'pov'].map(m => h('option', {value: m}, t('cam.mode.' + m)))
+					['static', 'orbit', 'follow', 'pov'].map(m => h('option', {value: m}, t('cam.mode.' + m)))
 				);
 				mode.value = p.mode;
 				const hk = h('button', {class: 'btn small hotkey-btn', type: 'button'}, U.formatHotkey(p.hotkey));
@@ -841,7 +844,7 @@
 				.concat(BUILTIN_SOUNDS.map(id => ({value: id, label: t('opt.sound.' + id)})))
 				.concat(pack && pack.sounds ? pack.sounds.map(s => ({value: 'pack:' + s.id, label: '📦 ' + s.name})) : []);
 			box.appendChild(h('h3', null, t('opt.hitsoundSlots')));
-			for (const slot of ['good', 'bad', 'miss', 'bomb']) {
+			for (const slot of ['bad', 'miss', 'bomb']) {
 				const base = 'audio.slots.' + slot;
 				const cur = get(base);
 				const enabled = h('label', {class: 'switch'}, h('input', {type: 'checkbox', checked: !!cur.enabled, onchange: e => set(base + '.enabled', e.target.checked)}), h('span', {class: 'slider'}));
@@ -957,7 +960,7 @@
 									type: 'button',
 									onclick: async () => {
 										await storage.removeLocal(D.KEYS.hitsoundPack);
-										for (const slot of ['good', 'bad', 'miss', 'bomb']) {
+										for (const slot of ['bad', 'miss', 'bomb']) {
 											if (String(get('audio.slots.' + slot + '.sound')).startsWith('pack:')) set('audio.slots.' + slot + '.sound', D.DEFAULT_SETTINGS.audio.slots[slot].sound);
 										}
 										rerenderSection('audio');

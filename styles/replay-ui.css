@@ -1,483 +1,248 @@
 /*
- * BeatLeaderPlus – replay viewer UI (panel, launcher, HUD, timeline graph, effects).
- * Loaded by the manifest on BeatLeader hosts; every selector is scoped to blp-r-*.
+ * BeatLeaderPlus – styles for the additions to the replayer's own interface.
+ *
+ * BeatLeaderPlus reuses the replayer's markup and classes (.toggleButton, .switch, .settingRange,
+ * .settingButton, .tab-button, .menuitem, …) so it inherits their look. The rules below only fill
+ * the gaps: layout inside the BL+ tabs (the replayer's panes are sized for a few short rows),
+ * lists and button rows, the timeline graph/markers and the screen flash. Every selector is
+ * scoped to blp-r-* / #blp* ids so nothing of the replayer changes.
  */
+
 :root {
-	--blpr-bg: rgba(14, 14, 22, 0.92);
-	--blpr-surface: rgba(255, 255, 255, 0.06);
-	--blpr-border: rgba(255, 255, 255, 0.12);
 	--blpr-text: #ececf4;
-	--blpr-muted: #9a9ab0;
-	--blpr-primary: #ff3d9a;
-	--blpr-accent: #40c4ff;
-	--blpr-good: #4cd964;
+	--blpr-muted: #a8a8ba;
+	--blpr-accent: rgba(142, 84, 233, 0.7); /* replayer's active tab colour */
+	--blpr-border: rgba(255, 255, 255, 0.12);
 	--blpr-bad: #ff5370;
-	--blpr-font: 500 12px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--blpr-bookmark: #ffc93c;
+	--blpr-loop: #40c4ff;
 }
 
-.blp-r-overlays-hidden #blp-r-hud,
-.blp-r-overlays-hidden #blp-r-panel,
+/* ---------------------------------------------------------------- disabled / hidden states */
+
+.blp-r-disabled #blpSettingsTab,
+.blp-r-disabled #blpCameraTab,
+.blp-r-disabled #blpCameraQuick,
+.blp-r-disabled .blp-r-menuitem,
 .blp-r-overlays-hidden .blp-r-timeline-graph,
 .blp-r-overlays-hidden .blp-r-timeline-marks {
 	display: none !important;
 }
 
-/* ---------------------------------------------------------------- launcher */
-.blp-r-launch {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	height: 28px;
-	min-width: 38px;
-	padding: 0 8px;
-	margin: 0 4px;
-	border-radius: 8px;
-	cursor: pointer;
-	user-select: none;
-	font: 800 12px/1 system-ui, sans-serif;
-	letter-spacing: 0.02em;
-	color: #fff;
-	background: linear-gradient(135deg, var(--blpr-primary), #7c4dff);
-	box-shadow: 0 2px 10px rgba(255, 61, 154, 0.35);
-	transition: transform 0.12s, box-shadow 0.12s;
-	pointer-events: auto;
+/* ---------------------------------------------------------------- BL+ tabs */
+
+.blp-r-tab-button i {
+	font-size: 0.85em;
 }
 
-.blp-r-launch:hover {
-	transform: translateY(-1px);
-	box-shadow: 0 4px 16px rgba(255, 61, 154, 0.5);
-}
-
-.blp-r-launch.blp-r-floating {
-	position: fixed;
-	right: 16px;
-	bottom: 86px;
-	z-index: 2147482000;
-}
-
-/* ---------------------------------------------------------------- panel */
-.blp-r-panel {
-	position: fixed;
-	top: 64px;
-	right: 16px;
-	width: 330px;
-	max-height: calc(100vh - 160px);
-	display: none;
-	flex-direction: column;
-	z-index: 2147482500;
-	background: var(--blpr-bg);
-	color: var(--blpr-text);
-	border: 1px solid var(--blpr-border);
-	border-radius: 14px;
-	box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
-	backdrop-filter: blur(14px);
-	font: var(--blpr-font);
-	overflow: hidden;
-}
-
-.blp-r-panel.blp-r-open {
-	display: flex;
-}
-
-.blp-r-panel.blp-r-dragging,
-.blp-r-hud.blp-r-dragging {
-	opacity: 0.85;
-	cursor: grabbing;
-}
-
-.blp-r-panel-head {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 9px 10px 9px 12px;
-	cursor: grab;
-	border-bottom: 1px solid var(--blpr-border);
-	user-select: none;
-}
-
-.blp-r-panel-head strong {
-	font-size: 13px;
-}
-
-.blp-r-spacer {
-	flex: 1;
-}
-
-.blp-r-brand {
-	font-weight: 900;
-	background: linear-gradient(90deg, var(--blpr-primary), var(--blpr-accent));
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
-}
-
-.blp-r-tabs {
-	display: flex;
-	gap: 2px;
-	padding: 6px 6px 0;
-	border-bottom: 1px solid var(--blpr-border);
-}
-
-.blp-r-tab {
-	flex: 1;
-	border: 0;
-	background: transparent;
-	color: var(--blpr-muted);
-	font: 600 11px/1 system-ui, sans-serif;
-	padding: 7px 4px 8px;
-	border-radius: 8px 8px 0 0;
-	cursor: pointer;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.blp-r-tab:hover {
-	color: var(--blpr-text);
-	background: var(--blpr-surface);
-}
-
-.blp-r-tab.blp-r-active {
-	color: #fff;
-	background: var(--blpr-surface);
-	box-shadow: inset 0 -2px 0 var(--blpr-primary);
-}
-
-.blp-r-panel-body {
+/* The settings menu has no height limit; our pane holds several sections, so scroll it. */
+#blpSettingsPane {
+	max-height: min(62vh, 520px);
 	overflow-y: auto;
-	padding: 8px 12px 14px;
+	overflow-x: hidden;
+	padding-right: 4px;
+	scrollbar-width: thin;
+}
+
+#blpCameraPane {
+	width: auto;
+	min-width: 10em;
+	max-height: min(62vh, 480px);
+	overflow-y: auto;
+	overflow-x: hidden;
+	text-align: left;
 	scrollbar-width: thin;
 }
 
 .blp-r-section {
-	padding: 8px 0;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
+	margin-bottom: 8px;
 }
 
-.blp-r-section:last-child {
-	border-bottom: 0;
+.blp-r-section + .blp-r-section {
+	padding-top: 6px;
+	border-top: 1px solid var(--blpr-border);
 }
 
-.blp-r-section h4 {
-	margin: 2px 0 2px;
-	font: 700 10px/1.2 system-ui, sans-serif;
-	text-transform: uppercase;
-	letter-spacing: 0.08em;
+.blp-r-header {
+	margin: 2px 0 5px;
+	color: #bdbdbd;
+	font-weight: 600;
+}
+
+.blp-r-hint {
+	margin: 0 0 6px;
 	color: var(--blpr-muted);
+	font-size: 10.5px;
+	line-height: 1.35;
+}
+
+.blp-r-hint.blp-r-inline {
+	display: inline;
+	margin: 0 0 0 4px;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.blp-r-pane .toggleButton,
+.blp-r-camera-quick .toggleButton {
+	margin: 3px 0;
+	text-align: left;
+}
+
+/* Labels in the replayer are fixed 30px boxes meant for one-word captions. */
+.blp-r-pane .toggleButtonLabel,
+.blp-r-camera-quick .toggleButtonLabel {
+	width: auto;
+	height: auto;
+	max-width: calc(100% - 44px);
+	vertical-align: middle;
+}
+
+.blp-r-pane .toggleButtonLabel nobr,
+.blp-r-camera-quick .toggleButtonLabel nobr {
+	white-space: normal;
+}
+
+.blp-r-range .toggleButtonContainer {
+	display: flex;
+	align-items: baseline;
+	gap: 4px;
+	height: auto;
+}
+
+.blp-r-range .blp-r-value {
+	max-width: none;
+	color: var(--blpr-muted);
+}
+
+.blp-r-pane input.settingRange,
+.blp-r-camera-quick input.settingRange {
+	width: 100%;
+	max-width: 220px;
+}
+
+.blp-r-color input[type='color'] {
+	width: 32px !important;
+	height: 18px;
+	padding: 0;
+	border: 1px solid var(--blpr-border);
+	border-radius: 3px;
+	background: transparent;
+	vertical-align: middle;
+	margin-left: 4px;
+	margin-right: 4px;
+}
+
+.blp-r-select select.settingButton {
+	display: block;
+	width: 100%;
+	max-width: 220px;
+	margin-top: 2px;
+	font-size: 11px;
+}
+
+.blp-r-btn {
+	margin: 2px 4px 2px 0;
+	font-size: 11px;
+	line-height: 1.2;
+}
+
+.blp-r-btn:hover:not(:disabled) {
+	background-color: #555;
+}
+
+.blp-r-btn.blp-r-active {
+	background-color: var(--blpr-accent);
+}
+
+.blp-r-input {
+	width: 100% !important;
+	max-width: 220px;
+	box-sizing: border-box;
+	padding: 3px 5px !important;
+	border: 1px solid var(--blpr-border) !important;
+	border-radius: 4px !important;
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--blpr-text);
+	font-size: 11px;
+	cursor: text !important;
 }
 
 .blp-r-row {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 5px;
 	align-items: center;
+	gap: 2px;
+	margin: 3px 0;
+}
+
+.blp-r-row > .toggleButton {
+	flex: 1 1 auto;
+	margin: 0;
+}
+
+.blp-r-grow {
+	flex: 1 1 auto;
+	text-align: left;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .blp-r-grid {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
-	gap: 4px 10px;
-}
-
-.blp-r-hint {
-	margin: 0;
-	color: var(--blpr-muted);
-	font-size: 11px;
-}
-
-.blp-r-btn {
-	font: 600 11.5px/1 system-ui, sans-serif;
-	color: var(--blpr-text);
-	background: var(--blpr-surface);
-	border: 1px solid var(--blpr-border);
-	border-radius: 8px;
-	padding: 6px 9px;
-	cursor: pointer;
-	white-space: nowrap;
-	transition: background 0.12s, border-color 0.12s;
-}
-
-.blp-r-btn:hover:not(:disabled) {
-	border-color: var(--blpr-primary);
-	background: rgba(255, 61, 154, 0.16);
-}
-
-.blp-r-btn:disabled {
-	opacity: 0.45;
-	cursor: default;
-}
-
-.blp-r-btn.blp-r-primary {
-	background: linear-gradient(135deg, var(--blpr-primary), #a64dff);
-	border-color: transparent;
-	color: #fff;
-}
-
-.blp-r-btn.blp-r-active {
-	background: var(--blpr-primary);
-	border-color: var(--blpr-primary);
-	color: #fff;
-}
-
-.blp-r-btn.blp-r-icon {
-	padding: 6px 7px;
-	min-width: 28px;
-}
-
-.blp-r-btn.blp-r-mode {
-	flex: 1 1 calc(50% - 5px);
-	text-align: left;
-}
-
-.blp-r-btn.blp-r-grow {
-	flex: 1;
-	text-align: left;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	gap: 0 6px;
 }
 
 .blp-r-list {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
-	max-height: 220px;
-	overflow-y: auto;
+	gap: 2px;
+	margin: 3px 0;
 }
 
 .blp-r-list-item {
 	display: flex;
-	gap: 5px;
 	align-items: center;
-}
-
-.blp-r-kbd {
-	font: 600 10px/1 ui-monospace, monospace;
-	color: var(--blpr-muted);
+	gap: 2px;
 	min-width: 0;
-	white-space: nowrap;
 }
 
-.blp-r-input {
-	flex: 1;
-	min-width: 0;
-	font: var(--blpr-font);
-	color: var(--blpr-text);
-	background: rgba(0, 0, 0, 0.3);
-	border: 1px solid var(--blpr-border);
-	border-radius: 7px;
-	padding: 5px 7px;
-}
-
-.blp-r-toggle {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	cursor: pointer;
-	user-select: none;
-}
-
-.blp-r-toggle input {
-	position: absolute;
-	opacity: 0;
-	pointer-events: none;
-}
-
-.blp-r-switch {
-	position: relative;
-	flex: none;
-	width: 28px;
-	height: 16px;
-	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.18);
-	transition: background 0.15s;
-}
-
-.blp-r-switch::after {
-	content: '';
-	position: absolute;
-	top: 2px;
-	left: 2px;
-	width: 12px;
-	height: 12px;
-	border-radius: 50%;
-	background: #fff;
-	transition: transform 0.15s;
-}
-
-.blp-r-toggle input:checked + .blp-r-switch {
-	background: var(--blpr-primary);
-}
-
-.blp-r-toggle input:checked + .blp-r-switch::after {
-	transform: translateX(12px);
-}
-
-.blp-r-slider {
-	display: grid;
-	grid-template-columns: 1fr auto;
-	gap: 2px 8px;
-	align-items: center;
-}
-
-.blp-r-slider input {
-	grid-column: 1 / -1;
-	width: 100%;
-	accent-color: var(--blpr-primary);
+.blp-r-list-item .blp-r-btn {
 	margin: 0;
 }
 
-.blp-r-value {
-	font: 600 11px/1 ui-monospace, monospace;
-	color: var(--blpr-accent);
+/* ---------------------------------------------------------------- camera menu quick block */
+
+.blp-r-camera-quick {
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--blpr-border);
+	text-align: center;
 }
 
-.blp-r-color {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	cursor: pointer;
-}
-
-.blp-r-color input {
-	width: 30px;
-	height: 22px;
-	padding: 0;
-	border: 1px solid var(--blpr-border);
-	border-radius: 6px;
-	background: none;
-	cursor: pointer;
-}
-
-.blp-r-select {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.blp-r-select select {
-	flex: 1;
-	min-width: 0;
-	font: var(--blpr-font);
-	color: var(--blpr-text);
-	background: #1c1c28;
-	border: 1px solid var(--blpr-border);
-	border-radius: 7px;
-	padding: 5px 6px;
-}
-
-.blp-r-label {
-	color: var(--blpr-text);
-}
-
-/* ---------------------------------------------------------------- HUD */
-.blp-r-hud {
-	position: fixed;
-	z-index: 2147481500;
-	min-width: 210px;
-	max-width: 260px;
-	padding: 8px 10px 10px;
-	border-radius: 12px;
-	color: var(--blpr-text);
-	font: var(--blpr-font);
-	font-variant-numeric: tabular-nums;
-	pointer-events: auto;
-	user-select: none;
-}
-
-.blp-r-hud-glass {
-	background: rgba(12, 12, 20, 0.55);
-	border: 1px solid rgba(255, 255, 255, 0.12);
-	backdrop-filter: blur(10px);
-	box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
-}
-
-.blp-r-hud-solid {
-	background: #12121b;
-	border: 1px solid #2c2c3a;
-}
-
-.blp-r-hud-minimal {
-	background: transparent;
-	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-}
-
-.blp-r-hud-head {
-	display: flex;
-	align-items: center;
-	gap: 8px;
+.blp-r-camera-quick .blp-r-section {
 	margin-bottom: 4px;
-	cursor: grab;
-	font-size: 11px;
-	color: var(--blpr-muted);
-	overflow: hidden;
-	white-space: nowrap;
-	text-overflow: ellipsis;
 }
 
-.blp-r-hud-grid {
-	display: grid;
-	grid-template-columns: 1fr;
-	gap: 1px;
-}
-
-.blp-r-hud-stat {
-	display: flex;
-	justify-content: space-between;
-	gap: 12px;
-	font-size: 12.5px;
-}
-
-.blp-r-hud-k {
-	color: rgba(255, 255, 255, 0.6);
-}
-
-.blp-r-hud-v {
-	font-weight: 700;
-}
-
-.blp-r-hud-accuracy .blp-r-hud-v,
-.blp-r-hud-pp .blp-r-hud-v {
-	color: var(--blpr-accent);
-	font-size: 14px;
-}
-
-.blp-r-good {
-	color: var(--blpr-good);
-}
-
-.blp-r-bad {
-	color: var(--blpr-bad);
-}
-
-.blp-r-hud-lastcut {
-	margin-top: 5px;
-	font-weight: 700;
-	font-size: 12px;
-}
-
-.blp-r-hud-graph {
-	display: block;
-	width: 100%;
-	margin-top: 6px;
-	border-radius: 6px;
-}
-
-.blp-r-hud-swings {
-	display: flex;
+.blp-r-camera-quick .blp-r-row {
 	justify-content: center;
-	gap: 14px;
-	margin-top: 6px;
 }
 
-.blp-r-hud-swing {
-	width: 56px;
-	height: 56px;
+.blp-r-camera-quick .blp-r-select select.settingButton {
+	margin: 2px auto 0;
 }
 
-/* ---------------------------------------------------------------- timeline */
+/* ---------------------------------------------------------------- right-click menu */
+
+.blp-r-menuitem .menuitem-icon i {
+	width: 1em;
+	text-align: center;
+}
+
+/* ---------------------------------------------------------------- timeline graph & markers */
+
 .blp-r-timeline-graph {
 	position: absolute;
 	left: 0;
@@ -501,7 +266,7 @@
 	width: 10px;
 	height: 10px;
 	margin-left: -5px;
-	background: #ffc93c;
+	background: var(--blpr-bookmark);
 	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%);
 	cursor: pointer;
 	pointer-events: auto;
@@ -512,9 +277,9 @@
 	position: absolute;
 	top: 0;
 	bottom: 0;
-	background: rgba(64, 196, 255, 0.28);
-	border-left: 2px solid var(--blpr-accent);
-	border-right: 2px solid var(--blpr-accent);
+	background: rgba(64, 196, 255, 0.25);
+	border-left: 2px solid var(--blpr-loop);
+	border-right: 2px solid var(--blpr-loop);
 }
 
 .blp-r-loop-region.blp-r-loop-open {
@@ -522,23 +287,14 @@
 	background: transparent;
 }
 
-/* ---------------------------------------------------------------- effects & toasts */
+/* ---------------------------------------------------------------- effects & error toasts */
+
 .blp-r-flash {
 	position: fixed;
 	inset: 0;
 	pointer-events: none;
 	z-index: 2147481000;
 	opacity: 0;
-}
-
-.blp-r-recording .blp-r-launch {
-	animation: blp-r-rec 1s ease-in-out infinite alternate;
-}
-
-@keyframes blp-r-rec {
-	to {
-		box-shadow: 0 0 0 4px rgba(255, 23, 68, 0.6);
-	}
 }
 
 .blp-r-toasts {
@@ -555,14 +311,12 @@
 }
 
 .blp-r-toast {
-	font: var(--blpr-font);
-	font-size: 13px;
+	font: 500 13px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 	color: #fff;
-	background: rgba(14, 14, 22, 0.9);
+	background: rgba(0, 0, 0, 0.85);
 	border: 1px solid var(--blpr-border);
-	border-radius: 10px;
+	border-radius: 5px;
 	padding: 8px 14px;
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 	transition: opacity 0.4s, transform 0.4s;
 }
 

@@ -2,7 +2,7 @@
 
 `tests/e2e/run-tests.js` loads the unpacked extension in Chromium (via Playwright) and drives:
 
-- a **mock replay viewer** (`replay.html` + `mock-replayer.js`) served at `https://replay.beatleader.com/`. It runs on the replayer's own A-Frame build and registers stand-ins for the official components (`song`, `song-controls`, `replay-loader`, `replay-player`, `camera-mover`, `beat-generator`, `colors`, `settings`, `trail`, `beat`, ...). They mirror the names and the behaviour BeatLeaderPlus hooks into.
+- a **mock replay viewer** (`replay.html` + `mock-replayer.js`) served at `https://replay.beatleader.com/`. It runs on the replayer's own A-Frame build and registers stand-ins for the official components (`song`, `song-controls`, `replay-loader`, `replay-player`, `camera-mover`, `beat-generator`, `colors`, `settings`, `trail`, `beat`, ...). They mirror the names and the behaviour BeatLeaderPlus hooks into, including `computeMissWindows()`. The page also copies the replayer's tabbed Settings and Camera menus (with `changeTab` / `changeCameraTab`), its right-click menu, the "click outside closes the menu" handler, the `scoreText` HUD mixin and a condensed version of its menu CSS, so the BL+ additions can be tested and screenshotted in place.
 - a **mock leaderboard page** (`site.html`) served at `https://beatleader.com/`
 - the **popup** and **options** pages
 

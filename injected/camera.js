@@ -1,21 +1,23 @@
 /*
- * BeatLeaderPlus – replay camera system (PAGE world).
+ * BeatLeaderPlus – camera additions (PAGE world).
  *
- * Modes
- *   default    the official free camera (#mainCamera with look-controls + wasd-controls)
- *   pov        the official first-person camera (toggled through camera-mover / .povswitch)
- *   free       BLP free fly: pointer-lock mouse look, WASD + E/Q, Shift sprint
- *   orbit      circles the player's head or the play-space center
- *   follow     smooth chase camera with lag, world or head-relative offset
- *   fpvSmooth  first person with smoothing and optional roll removal
- *   path       plays a recorded / keyframed camera path (synced to song time)
+ * Builds on the replayer's own cameras:
+ *   default   the official free camera (#mainCamera: look-controls + wasd-controls, which already
+ *             flies with W A S D and X / C). BLP adds a move-speed setting (wasd acceleration),
+ *             Shift-to-sprint, pointer-lock look and a field-of-view setting.
+ *   pov       the official first-person camera (toggled through camera-mover / .povswitch).
  *
- * For every BLP mode the official look/wasd controls on #mainCamera are disabled and the camera
- * object is driven from this module's tick (which runs after the official components, before
- * rendering). Leaving a BLP mode copies the final orientation back into look-controls so the
- * official camera continues seamlessly.
+ * and adds what it lacks:
+ *   orbit     circles the player's head or the play-space center
+ *   follow    smooth chase camera with lag, world or head-relative offset
+ *   path      plays a recorded / keyframed camera path (synced to song time)
+ *   presets   named camera setups with hotkeys, next to the official Save / Restore
  *
- * URL parameters: blpCam=<preset id|name>, blpMode=<mode>, blpPath=<packed path>, blpPanel=1
+ * While orbit / follow / path drive the camera, the official look/wasd controls are paused; when
+ * the official camera takes over again it continues from the final orientation.
+ *
+ * UI: a compact block under "Main camera" in the replayer's camera menu, plus a "BL+" camera tab.
+ * URL parameters: blpCam=<preset id|name>, blpMode=<mode>, blpPath=<packed path>.
  */
 (function () {
 	'use strict';
@@ -25,9 +27,9 @@
 	const U = window.BLP.utils;
 	const t = (k, v) => R.t(k, v);
 	const DEG = Math.PI / 180;
-	const MODES = ['default', 'free', 'orbit', 'follow', 'fpvSmooth', 'pov'];
-	const DRIVEN = new Set(['free', 'orbit', 'follow', 'fpvSmooth', 'path', 'transition']);
-	const MODE_ICONS = {default: '🎥', pov: '👁', free: '🕊', orbit: '🌀', follow: '🎯', fpvSmooth: '🥽', path: '🛤'};
+	const MODES = ['default', 'orbit', 'follow', 'pov'];
+	const DRIVEN = new Set(['orbit', 'follow', 'path', 'transition']);
+	const WASD_EASING_FALLBACK = 20;
 
 	let ctx = null;
 	let THREE = null;
@@ -38,7 +40,7 @@
 		presetParams: {},
 		fovOverride: null,
 		current: null,
-		free: {yaw: 0, pitch: 0, pos: null, keys: new Set(), sprint: false, dragging: false},
+		sprinting: false,
 		orbit: {angle: 0},
 		follow: {yaw: null},
 		trans: null,
@@ -53,6 +55,7 @@
 		const el = mainEl();
 		return el && el.components['look-controls'];
 	};
+	const refreshUi = () => R.ui && R.ui.refresh(true);
 
 	function setOfficialControls(enabled) {
 		const el = mainEl();
@@ -125,8 +128,7 @@
 	}
 
 	function currentFov() {
-		if (cam.fovOverride) return cam.fovOverride;
-		return Number(settings().fov) || 80;
+		return cam.fovOverride || Number(settings().fov) || 80;
 	}
 
 	function applyFov(fov) {
@@ -134,9 +136,40 @@
 		if (!el || !el.components.camera) return;
 		const v = fov || currentFov();
 		if (Math.abs((el.components.camera.data.fov || 0) - v) > 0.01) el.setAttribute('camera', 'fov', v);
-		if (settings().applyFovToPov && ctx.povCamera && ctx.povCamera.components.camera) {
-			if (Math.abs((ctx.povCamera.components.camera.data.fov || 0) - v) > 0.01) ctx.povCamera.setAttribute('camera', 'fov', v);
+	}
+
+	/* ------------------------------------------------------------------ official free camera tweaks */
+
+	/** Move speed, sprint and pointer-lock look for the replayer's own WASD camera. */
+	function applyFreeCamera() {
+		const el = mainEl();
+		if (!el || DRIVEN.has(cam.mode)) return;
+		const s = settings().free;
+		const wasd = el.components['wasd-controls'];
+		if (wasd) {
+			const easing = Number(wasd.data.easing) || WASD_EASING_FALLBACK;
+			const speed = (R.active() ? Number(s.speed) || 3.25 : 3.25) * (R.active() && cam.sprinting ? Number(s.sprint) || 1 : 1);
+			const acceleration = U.round(speed * easing, 3); // terminal speed = acceleration / easing
+			if (Math.abs((wasd.data.acceleration || 0) - acceleration) > 1e-3) el.setAttribute('wasd-controls', 'acceleration', acceleration);
 		}
+		const lc = lookControls();
+		const lock = !!(R.active() && s.pointerLock);
+		if (lc && lc.data.pointerLockEnabled !== lock) el.setAttribute('look-controls', 'pointerLockEnabled', lock);
+	}
+
+	function installSprint() {
+		const onKey = e => {
+			if (e.shiftKey !== cam.sprinting) {
+				cam.sprinting = e.shiftKey;
+				applyFreeCamera();
+			}
+		};
+		window.addEventListener('keydown', onKey, true);
+		window.addEventListener('keyup', onKey, true);
+		window.addEventListener('blur', () => {
+			cam.sprinting = false;
+			applyFreeCamera();
+		});
 	}
 
 	/* ------------------------------------------------------------------ POV */
@@ -174,28 +207,20 @@
 				syncLookControls();
 				setOfficialControls(true);
 			}
-			exitPointerLock();
 			enterPov();
 		} else if (DRIVEN.has(mode)) {
 			exitPov();
 			if (!DRIVEN.has(prev)) readPose(cam.current);
-			if (mode === 'free') {
-				const e = tmp.e1.setFromQuaternion(cam.current.quat, 'YXZ');
-				cam.free.yaw = e.y;
-				cam.free.pitch = e.x;
-				cam.free.pos.copy(cam.current.pos);
-				cam.free.keys.clear();
-			} else if (mode === 'orbit' && prev !== 'orbit') {
+			if (mode === 'orbit' && prev !== 'orbit') {
 				const o = Object.assign({}, settings().orbit, cam.presetParams.orbit || {});
 				cam.orbit.angle = (Number(o.startAngle) || 0) * DEG;
 			} else if (mode === 'follow') {
 				cam.follow.yaw = null;
 			}
 			setOfficialControls(false);
-			if (mode !== 'free') exitPointerLock();
+			if (document.pointerLockElement) document.exitPointerLock();
 		} else {
 			exitPov();
-			exitPointerLock();
 			if (DRIVEN.has(prev)) {
 				syncLookControls();
 				setOfficialControls(true);
@@ -203,133 +228,37 @@
 		}
 		cam.mode = mode;
 		applyFov();
+		applyFreeCamera();
 		if (settings().rememberMode && !opts.noRemember && MODES.includes(mode)) R.setRuntime('lastCameraMode', mode);
 		if (!opts.silent && mode !== 'transition') R.api.notify(t('r.presetApplied', {name: t('cam.mode.' + mode)}), 'fas fa-video');
 		R.emit('cameramode', mode);
-		if (R.ui) R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function cycleMode() {
-		const order = MODES;
-		const i = order.indexOf(cam.mode);
-		setMode(order[(i + 1) % order.length]);
+		setMode(MODES[(MODES.indexOf(cam.mode) + 1) % MODES.length]);
 	}
 
-	/** Smoothly move to a static pose, then hand over to `thenMode` (default: official camera). */
-	function transitionTo(pose, thenMode = 'default', fov) {
-		if (!pose) return setMode(thenMode);
+	/** Smoothly move the official camera to a pose, then hand control back to it. */
+	function transitionTo(pose, fov) {
+		if (!pose) return setMode('default');
 		const to = {pos: new THREE.Vector3(pose.x || 0, pose.y || 1.7, pose.z || 0), quat: poseToQuat(pose, new THREE.Quaternion())};
 		const strength = Number(settings().smoothing) || 0;
 		const dur = strength > 0 ? 0.35 + strength * 0.9 : 0;
 		if (!dur) {
-			if (DRIVEN.has(cam.mode)) setMode('default', {silent: true, keepFov: true});
-			exitPov();
+			if (cam.mode !== 'default') setMode('default', {silent: true, keepFov: true});
 			writePose(to.pos, to.quat);
 			cam.current.pos.copy(to.pos);
 			cam.current.quat.copy(to.quat);
 			syncLookControls();
-			if (thenMode !== 'default') setMode(thenMode, {silent: true, keepFov: true});
 			if (fov) applyFov(fov);
 			return;
 		}
 		setMode('transition', {silent: true, keepFov: true});
-		cam.trans = {fromPos: cam.current.pos.clone(), fromQuat: cam.current.quat.clone(), to, t: 0, dur, thenMode};
-	}
-
-	/* ------------------------------------------------------------------ free camera input */
-
-	function canvas() {
-		return ctx && ctx.canvas;
-	}
-
-	function exitPointerLock() {
-		if (document.pointerLockElement && document.pointerLockElement === canvas()) document.exitPointerLock();
-	}
-
-	function freeKeyToken(e) {
-		const token = U.codeToToken(e.code, e.key).toUpperCase();
-		const keys = settings().free.keys || {};
-		for (const k of Object.keys(keys)) if (String(keys[k]).toUpperCase() === token) return token;
-		return null;
-	}
-
-	function installInput() {
-		window.addEventListener(
-			'keydown',
-			e => {
-				if (cam.mode !== 'free' || !R.active() || U.isTypingTarget(e.target)) return;
-				cam.free.sprint = e.shiftKey;
-				if (e.ctrlKey || e.altKey || e.metaKey) return;
-				const token = freeKeyToken(e);
-				if (!token) return;
-				cam.free.keys.add(token);
-				e.preventDefault();
-				e.stopImmediatePropagation(); // keep Shift+E/Q/R etc. away from the official camera
-			},
-			true
-		);
-		window.addEventListener(
-			'keyup',
-			e => {
-				cam.free.sprint = e.shiftKey;
-				const token = U.codeToToken(e.code, e.key).toUpperCase();
-				cam.free.keys.delete(token);
-			},
-			true
-		);
-		window.addEventListener('blur', () => cam.free.keys.clear());
-
-		const c = canvas();
-		if (!c) return;
-		c.addEventListener('mousedown', e => {
-			if (cam.mode !== 'free' || !R.active()) return;
-			if (e.button === 0 && document.pointerLockElement !== c) {
-				const p = c.requestPointerLock && c.requestPointerLock();
-				if (p && p.catch) p.catch(() => {});
-			} else if (e.button === 2) {
-				cam.free.dragging = true;
-			}
-		});
-		window.addEventListener('mouseup', () => (cam.free.dragging = false));
-		c.addEventListener('contextmenu', e => cam.mode === 'free' && e.preventDefault());
-		document.addEventListener('mousemove', e => {
-			if (cam.mode !== 'free') return;
-			if (document.pointerLockElement !== c && !cam.free.dragging) return;
-			const s = settings().free;
-			const sens = (Number(s.sensitivity) || 0.12) * DEG;
-			cam.free.yaw -= e.movementX * sens;
-			cam.free.pitch -= e.movementY * sens * (s.invertY ? -1 : 1);
-			cam.free.pitch = U.clamp(cam.free.pitch, -89 * DEG, 89 * DEG);
-		});
-		document.addEventListener('pointerlockchange', () => {
-			if (document.pointerLockElement === c && cam.mode === 'free') R.ui && R.ui.toast(t('r.freeHint'));
-		});
+		cam.trans = {fromPos: cam.current.pos.clone(), fromQuat: cam.current.quat.clone(), to, t: 0, dur};
 	}
 
 	/* ------------------------------------------------------------------ per-frame update */
-
-	function updateFree(dt) {
-		const s = settings().free;
-		const keys = cam.free.keys;
-		const k = s.keys || {};
-		const has = name => keys.has(String(k[name] || '').toUpperCase());
-		const q = tmp.q1.setFromEuler(tmp.e2.set(cam.free.pitch, cam.free.yaw, 0, 'YXZ'));
-		const move = tmp.v3.set(0, 0, 0);
-		const fwd = tmp.v1.set(0, 0, -1).applyQuaternion(q);
-		const right = tmp.v2.set(1, 0, 0).applyQuaternion(q);
-		if (has('forward')) move.add(fwd);
-		if (has('back')) move.sub(fwd);
-		if (has('right')) move.add(right);
-		if (has('left')) move.sub(right);
-		if (has('up')) move.y += 1;
-		if (has('down')) move.y -= 1;
-		if (move.lengthSq() > 0) {
-			const speed = (Number(s.speed) || 3) * (cam.free.sprint ? Number(s.sprint) || 3 : 1);
-			move.normalize().multiplyScalar(speed * dt);
-			cam.free.pos.add(move);
-		}
-		applyPose(cam.free.pos, q, (Number(settings().smoothing) || 0) * 0.5, dt);
-	}
 
 	function updateOrbit(dt) {
 		const o = Object.assign({}, settings().orbit, cam.presetParams.orbit || {});
@@ -360,21 +289,6 @@
 		applyPose(pos, lookQuat(pos, look, tmp.q1), Number(f.lag) || 0, dt);
 	}
 
-	function updateFpv(dt) {
-		const p = Object.assign({}, settings().fpv, cam.presetParams.fpv || {});
-		const pos = targetPoint('head', tmp.v1);
-		const q = headQuat(tmp.q1);
-		if (p.lockRoll) {
-			const e = tmp.e1.setFromQuaternion(q, 'YXZ');
-			e.z = 0;
-			q.setFromEuler(e);
-		}
-		const fwd = tmp.v2.set(0, 0, -1).applyQuaternion(q);
-		pos.y += Number(p.offsetY) || 0;
-		pos.addScaledVector(fwd, Number(p.offsetZ) || 0);
-		applyPose(pos, q, Number(p.smoothing) || 0, dt);
-	}
-
 	function updateTransition(dt) {
 		const tr = cam.trans;
 		if (!tr) return setMode('default', {silent: true});
@@ -386,9 +300,7 @@
 		writePose(cam.current.pos, cam.current.quat);
 		if (u >= 1) {
 			cam.trans = null;
-			if (tr.thenMode === 'free') {
-				setMode('free', {silent: true, keepFov: true});
-			} else setMode(tr.thenMode || 'default', {silent: true, keepFov: true, keepPreset: true});
+			setMode('default', {silent: true, keepFov: true, keepPreset: true});
 		}
 	}
 
@@ -437,12 +349,8 @@
 		const smooth = settings().path.smooth !== false;
 		const p0 = k[Math.max(0, lo - 1)];
 		const p3 = k[Math.min(k.length - 1, lo + 2)];
-		for (let i = 1; i <= 3; i++) {
-			const v = smooth ? catmull(p0[i], a[i], b[i], p3[i], u) : U.lerp(a[i], b[i], u);
-			if (i === 1) outPos.x = v;
-			else if (i === 2) outPos.y = v;
-			else outPos.z = v;
-		}
+		const axis = i => (smooth ? catmull(p0[i], a[i], b[i], p3[i], u) : U.lerp(a[i], b[i], u));
+		outPos.set(axis(1), axis(2), axis(3));
 		tmp.q3.set(a[4], a[5], a[6], a[7]);
 		tmp.q4.set(b[4], b[5], b[6], b[7]);
 		outQuat.copy(tmp.q3).slerp(tmp.q4, u);
@@ -465,10 +373,11 @@
 		const p = cam.path.current;
 		if (!p) return 0;
 		if (p.timeBase === 'real') {
-			let tt = (performance.now() - cam.path.playStart) / 1000 + (p.keyframes.length ? p.keyframes[0][0] : 0);
+			const start = p.keyframes.length ? p.keyframes[0][0] : 0;
+			let tt = (performance.now() - cam.path.playStart) / 1000 + start;
 			const dur = pathDuration(p);
-			if (settings().path.loop && dur > 0) tt = p.keyframes[0][0] + ((tt - p.keyframes[0][0]) % dur);
-			else if (dur > 0 && tt > p.keyframes[0][0] + dur + 0.5) stopPath();
+			if (settings().path.loop && dur > 0) tt = start + ((tt - start) % dur);
+			else if (dur > 0 && tt > start + dur + 0.5) stopPath();
 			return tt;
 		}
 		return frame.time;
@@ -494,10 +403,8 @@
 		if (k.length) {
 			const last = k[k.length - 1][0];
 			if (p.timeBase !== 'real' && Math.abs(time - last) < 1e-4) return; // paused: nothing new
-			if (time < last) {
-				// The user seeked backwards: overwrite everything after the new time.
-				while (k.length && k[k.length - 1][0] >= time) k.pop();
-			}
+			// The user seeked backwards: overwrite everything after the new time.
+			if (time < last) while (k.length && k[k.length - 1][0] >= time) k.pop();
 		}
 		pr.lastSample = now;
 		k.push(captureKeyframe(time));
@@ -531,7 +438,7 @@
 		cam.path.recordStart = performance.now();
 		cam.path.lastSample = 0;
 		R.api.notify(t('r.pathRecording'), 'fas fa-circle');
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	async function stopRecording() {
@@ -539,13 +446,12 @@
 		cam.path.recording = false;
 		if (!p || p.keyframes.length < 2) {
 			R.api.notify(t('r.pathTooShort'), 'fas fa-triangle-exclamation');
-			R.ui && R.ui.refreshPanel(true);
-			return;
+			return refreshUi();
 		}
 		p.keyframes.sort((a, b) => a[0] - b[0]);
 		await savePath(p);
 		R.api.notify(t('r.pathRecorded', {n: p.keyframes.length}), 'fas fa-check');
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function addKeyframe() {
@@ -558,7 +464,7 @@
 		R.api.notify(t('r.pathKeyframeAdded', {n: p.keyframes.length, time: U.formatTime(time, false)}), 'fas fa-plus');
 		clearTimeout(cam.path.saveTimer);
 		cam.path.saveTimer = setTimeout(() => savePath(p).catch(() => {}), 600);
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function playPath() {
@@ -570,14 +476,14 @@
 		cam.path.playing = true;
 		cam.path.playStart = performance.now();
 		R.api.notify(t('r.pathPlaying'), 'fas fa-route');
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function stopPath() {
 		if (!cam.path.playing && cam.mode !== 'path') return;
 		cam.path.playing = false;
 		if (cam.mode === 'path') setMode('default', {silent: true});
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function togglePath() {
@@ -597,7 +503,7 @@
 			out[out.length - 1] = k[k.length - 1];
 			k = out;
 		}
-		return {n: path.name, tb: path.timeBase, k: k.map(kf => kf.map((v, i) => (i === 0 ? U.round(v, 3) : i <= 3 ? U.round(v, 3) : i <= 7 ? U.round(v, 4) : U.round(v, 1))))};
+		return {n: path.name, tb: path.timeBase, k: k.map(kf => kf.map((v, i) => (i <= 3 ? U.round(v, 3) : i <= 7 ? U.round(v, 4) : U.round(v, 1))))};
 	}
 
 	function expandPath(c) {
@@ -610,9 +516,8 @@
 	async function sharePathLink() {
 		const p = cam.path.current;
 		if (!p || p.keyframes.length < 2) return R.api.notify(t('r.pathEmpty'), 'fas fa-triangle-exclamation');
-		const packed = await U.packForUrl(JSON.stringify(compactPath(p)));
 		const url = new URL(location.href);
-		url.searchParams.set('blpPath', packed);
+		url.searchParams.set('blpPath', await U.packForUrl(JSON.stringify(compactPath(p))));
 		url.searchParams.delete('blpCam');
 		await U.copyText(url.toString());
 		R.api.notify(t('r.pathShareCopied'), 'fas fa-link');
@@ -639,12 +544,31 @@
 				const path = raw.k ? expandPath(raw) : expandPath({n: raw.name, tb: raw.timeBase, k: raw.keyframes});
 				await savePath(path);
 				cam.path.current = path;
-				R.ui && R.ui.refreshPanel(true);
+				refreshUi();
 			} catch (e) {
 				R.ui.toast(String(e.message || e), 'error');
 			}
 		};
 		input.click();
+	}
+
+	async function deleteCurrentPath() {
+		const cur = cam.path.current;
+		if (!cur) return;
+		stopPath();
+		await R.request('deletePath', {id: cur.id}).catch(() => {});
+		cam.path.list = cam.path.list.filter(p => p.id !== cur.id);
+		cam.path.current = cam.path.list[0] || null;
+		refreshUi();
+	}
+
+	function renameCurrentPath() {
+		const cur = cam.path.current;
+		if (!cur) return;
+		const name = window.prompt(t('r.pathName'), cur.name);
+		if (!name) return;
+		cur.name = name.slice(0, 80);
+		savePath(cur).then(refreshUi);
 	}
 
 	/* ------------------------------------------------------------------ presets */
@@ -660,9 +584,9 @@
 	function applyPreset(p, opts = {}) {
 		if (!p || !ctx) return;
 		stopPath();
-		const fov = Number(p.fov) || null;
 		switch (p.mode) {
 			case 'pov':
+			case 'fpvSmooth': // presets from older versions
 				setMode('pov', {silent: true});
 				break;
 			case 'orbit':
@@ -673,33 +597,23 @@
 				cam.presetParams = {follow: p.follow || {}};
 				setMode('follow', {silent: true, keepPreset: true});
 				break;
-			case 'fpvSmooth':
-				cam.presetParams = {fpv: p.fpv || {}};
-				setMode('fpvSmooth', {silent: true, keepPreset: true});
-				break;
-			case 'free':
-				if (p.pose) transitionTo(p.pose, 'free');
-				else setMode('free', {silent: true});
-				break;
 			default:
-				transitionTo(p.pose, 'default');
+				transitionTo(p.pose, p.fov);
 		}
-		cam.fovOverride = fov;
+		cam.fovOverride = Number(p.fov) || null;
 		applyFov();
 		if (!opts.silent) R.api.notify(t('r.presetApplied', {name: p.name}), 'fas fa-video');
 	}
 
 	function capturePreset() {
-		const name = window.prompt(t('r.presetName'), t('cam.mode.' + (cam.mode === 'transition' ? 'static' : cam.mode)) + ' ' + (presets().length + 1));
+		const mode = cam.mode === 'orbit' || cam.mode === 'follow' || cam.mode === 'pov' ? cam.mode : 'static';
+		const name = window.prompt(t('r.presetName'), t('cam.mode.' + mode) + ' ' + (presets().length + 1));
 		if (!name) return;
 		const hotkey = window.prompt(t('r.presetHotkeyPrompt', {name}), '') || '';
-		const modeMap = {default: 'static', transition: 'static', path: 'static'};
-		const mode = modeMap[cam.mode] || cam.mode;
 		const preset = {id: U.uid('preset'), name: name.trim().slice(0, 60), hotkey: U.normalizeHotkey(hotkey), mode, fov: U.round(currentFov(), 1)};
 		if (mode !== 'pov') preset.pose = currentPoseDeg();
 		if (mode === 'orbit') preset.orbit = Object.assign({}, settings().orbit, cam.presetParams.orbit || {});
 		if (mode === 'follow') preset.follow = U.deepClone(Object.assign({}, settings().follow, cam.presetParams.follow || {}));
-		if (mode === 'fpvSmooth') preset.fpv = Object.assign({}, settings().fpv, cam.presetParams.fpv || {});
 		R.patchSettings({camera: {presets: presets().concat([preset])}});
 		R.api.notify(t('r.presetSaved', {name: preset.name}), 'fas fa-floppy-disk');
 	}
@@ -722,12 +636,12 @@
 				cam.path.current = path;
 				R.api.notify(t('r.pathLoadedShared'), 'fas fa-route');
 				if (s.path.autoPlayShared) {
-					if (R.api.isPlaying()) playPath();
-					else R.on('songstart', function once() {
-						R.off('songstart', once);
-						playPath();
-					});
-					if (R.replayInfo) setTimeout(playPath, 300);
+					if (R.api.isPlaying() || R.replayInfo) setTimeout(playPath, 300);
+					else
+						R.on('songstart', function once() {
+							R.off('songstart', once);
+							playPath();
+						});
 				}
 			} catch (e) {
 				R.log.warn('could not load shared path', e);
@@ -743,118 +657,116 @@
 			else if (s.rememberMode && R.runtime.lastCameraMode && R.runtime.lastCameraMode !== 'default') setMode(R.runtime.lastCameraMode, {silent: true});
 			else if (s.mode && s.mode !== 'default') setMode(s.mode, {silent: true});
 		}
-		if (params.get('blpPanel') === '1' && R.ui) R.ui.openPanel('camera');
-		else if (R.runtime.panelOpen && R.ui) R.ui.openPanel();
+		refreshUi();
 	}
 
-	/* ------------------------------------------------------------------ panel */
+	/* ------------------------------------------------------------------ camera menu UI */
 
-	function renderTab(body) {
+	function pathOptions() {
+		const pr = cam.path;
+		const options = pr.list.map(p => ({value: p.id, label: p.name + ' (' + p.keyframes.length + ')'}));
+		if (pr.current && !pr.list.some(p => p.id === pr.current.id)) options.unshift({value: pr.current.id, label: (pr.current.shared ? '🔗 ' : '✱ ') + pr.current.name});
+		return options;
+	}
+
+	function selectPath(id) {
+		stopPath();
+		cam.path.current = cam.path.list.find(p => p.id === id) || cam.path.current;
+		R.setRuntime('lastPathId', id);
+		refreshUi();
+	}
+
+	/** Compact block under the official "Main camera" controls. */
+	function renderQuick(body) {
 		const ui = R.ui;
-		const s = settings();
-
-		// Modes
-		const modeRow = ui.row();
-		for (const m of MODES.concat(['path'])) {
-			const active = cam.mode === m || (m === 'path' && cam.path.playing);
-			modeRow.appendChild(
-				ui.button(MODE_ICONS[m] + ' ' + t('cam.mode.' + m), () => (m === 'path' ? togglePath() : setMode(m)), {active, className: 'blp-r-mode'})
+		body.appendChild(
+			ui.row(
+				...['orbit', 'follow'].map(m => ui.button(t('cam.mode.' + m), () => setMode(cam.mode === m ? 'default' : m), {active: cam.mode === m}))
+			)
+		);
+		const presetOptions = [{value: '', label: t('r.presetSelect')}].concat(presets().map(p => ({value: p.id, label: p.name + (p.hotkey ? ' (' + U.formatHotkey(p.hotkey) + ')' : '')})));
+		body.appendChild(
+			ui.row(
+				ui.select('', presetOptions, '', id => id && applyPreset(findPreset(id))),
+				ui.button('💾', capturePreset, {title: t('r.savePreset')})
+			)
+		);
+		const options = pathOptions();
+		if (options.length) {
+			if (!cam.path.current) cam.path.current = cam.path.list[0] || null;
+			body.appendChild(
+				ui.row(
+					ui.select('', options, cam.path.current ? cam.path.current.id : '', selectPath),
+					ui.button(cam.path.playing ? '⏹' : '▶', togglePath, {active: cam.path.playing, title: t(cam.path.playing ? 'r.pathStop' : 'r.pathPlay')})
+				)
 			);
 		}
-		body.appendChild(ui.section(t('r.mode'), modeRow, cam.mode === 'free' ? ui.hint(t('r.freeHint')) : null));
+		body.appendChild(ui.hint(t('r.cameraMore')));
+	}
 
-		// Presets
+	function renderFreeSection(body) {
+		const ui = R.ui;
+		const s = settings();
+		body.appendChild(
+			ui.range(t('r.fov'), {min: 20, max: 130, step: 1, value: currentFov(), unit: '°'}, v => {
+				cam.fovOverride = null;
+				R.setPath('camera.fov', v);
+				applyFov(v);
+			})
+		);
+		body.appendChild(ui.range(t('f.camera.free.speed'), {min: 0.5, max: 15, step: 0.25, value: s.free.speed, unit: ' m/s'}, v => R.setPath('camera.free.speed', v)));
+		body.appendChild(ui.range(t('f.camera.free.sprint'), {min: 1, max: 8, step: 0.5, value: s.free.sprint, unit: '×'}, v => R.setPath('camera.free.sprint', v)));
+		body.appendChild(ui.toggle(t('r.flyMode'), s.free.pointerLock, v => R.setPath('camera.free.pointerLock', v), t('d.camera.free.pointerLock')));
+	}
+
+	function renderModesSection(body) {
+		const ui = R.ui;
+		const s = settings();
+		const clear = () => (cam.presetParams = {});
+		body.appendChild(ui.range(t('r.smoothing'), {min: 0, max: 1, step: 0.05, value: s.smoothing}, v => R.setPath('camera.smoothing', v)));
+		body.appendChild(ui.range(t('f.camera.orbit.radius'), {min: 0.5, max: 12, step: 0.1, value: s.orbit.radius, unit: 'm'}, v => (clear(), R.setPath('camera.orbit.radius', v))));
+		body.appendChild(ui.range(t('f.camera.orbit.height'), {min: -1, max: 8, step: 0.1, value: s.orbit.height, unit: 'm'}, v => (clear(), R.setPath('camera.orbit.height', v))));
+		body.appendChild(ui.range(t('f.camera.orbit.speed'), {min: -90, max: 90, step: 1, value: s.orbit.speed, unit: '°/s'}, v => (clear(), R.setPath('camera.orbit.speed', v))));
+		body.appendChild(ui.range(t('f.camera.follow.lag'), {min: 0, max: 1, step: 0.05, value: s.follow.lag}, v => (clear(), R.setPath('camera.follow.lag', v))));
+		body.appendChild(ui.range(t('f.camera.follow.offset.z'), {min: -6, max: 8, step: 0.05, value: s.follow.offset.z, unit: 'm'}, v => (clear(), R.setPath('camera.follow.offset.z', v))));
+	}
+
+	function renderPresetsSection(body) {
+		const ui = R.ui;
 		const list = ui.h('div', {class: 'blp-r-list'});
 		for (const p of presets()) {
 			list.appendChild(
 				ui.h(
 					'div',
 					{class: 'blp-r-list-item'},
-					ui.button(p.name, () => applyPreset(p), {className: 'blp-r-grow', title: t('cam.mode.' + p.mode)}),
-					ui.h('span', {class: 'blp-r-kbd'}, p.hotkey ? U.formatHotkey(p.hotkey) : ''),
-					ui.button('✕', () => deletePreset(p.id), {title: t('common.delete'), className: 'blp-r-icon'})
+					ui.button(p.name, () => applyPreset(p), {className: 'blp-r-grow', title: t('cam.mode.' + (p.mode === 'static' ? 'default' : p.mode))}),
+					ui.button('✕', () => deletePreset(p.id), {title: t('common.delete')})
 				)
 			);
 		}
-		body.appendChild(ui.section(t('r.presets'), list, ui.row(ui.button('💾 ' + t('r.savePreset'), capturePreset, {primary: true}))));
+		body.appendChild(list);
+	}
 
-		// Common sliders
-		const sliders = ui.section(
-			null,
-			ui.slider(t('r.fov'), {min: 20, max: 130, step: 1, value: currentFov(), unit: '°'}, v => {
-				cam.fovOverride = null;
-				R.setPath('camera.fov', v);
-				applyFov(v);
-			}),
-			ui.slider(t('r.smoothing'), {min: 0, max: 1, step: 0.05, value: s.smoothing}, v => R.setPath('camera.smoothing', v))
-		);
-		if (cam.mode === 'free') sliders.appendChild(ui.slider(t('r.moveSpeed'), {min: 0.5, max: 15, step: 0.5, value: s.free.speed, unit: ' m/s'}, v => R.setPath('camera.free.speed', v)));
-		if (cam.mode === 'orbit') {
-			const clearPreset = () => (cam.presetParams = {});
-			sliders.appendChild(ui.slider(t('f.camera.orbit.radius'), {min: 0.5, max: 12, step: 0.1, value: s.orbit.radius, unit: 'm'}, v => (clearPreset(), R.setPath('camera.orbit.radius', v))));
-			sliders.appendChild(ui.slider(t('f.camera.orbit.height'), {min: -1, max: 8, step: 0.1, value: s.orbit.height, unit: 'm'}, v => (clearPreset(), R.setPath('camera.orbit.height', v))));
-			sliders.appendChild(ui.slider(t('f.camera.orbit.speed'), {min: -90, max: 90, step: 1, value: s.orbit.speed, unit: '°/s'}, v => (clearPreset(), R.setPath('camera.orbit.speed', v))));
-		}
-		if (cam.mode === 'follow') {
-			sliders.appendChild(ui.slider(t('f.camera.follow.lag'), {min: 0, max: 1, step: 0.05, value: s.follow.lag}, v => ((cam.presetParams = {}), R.setPath('camera.follow.lag', v))));
-			sliders.appendChild(ui.slider(t('f.camera.follow.offset.z'), {min: -6, max: 8, step: 0.05, value: s.follow.offset.z, unit: 'm'}, v => ((cam.presetParams = {}), R.setPath('camera.follow.offset.z', v))));
-			sliders.appendChild(ui.slider(t('f.camera.follow.offset.y'), {min: -3, max: 6, step: 0.05, value: s.follow.offset.y, unit: 'm'}, v => ((cam.presetParams = {}), R.setPath('camera.follow.offset.y', v))));
-		}
-		if (cam.mode === 'fpvSmooth') {
-			sliders.appendChild(ui.slider(t('f.camera.fpv.smoothing'), {min: 0, max: 1, step: 0.05, value: s.fpv.smoothing}, v => ((cam.presetParams = {}), R.setPath('camera.fpv.smoothing', v))));
-		}
-		body.appendChild(sliders);
-
-		// Paths
+	function renderPathsSection(body) {
+		const ui = R.ui;
 		const pr = cam.path;
-		const options = pr.list.map(p => ({value: p.id, label: p.name + ' (' + p.keyframes.length + ')'}));
-		if (pr.current && !pr.list.some(p => p.id === pr.current.id)) options.unshift({value: pr.current.id, label: (pr.current.shared ? '🔗 ' : '✱ ') + pr.current.name + ' (' + pr.current.keyframes.length + ')'});
-		const pathSel = options.length
-			? ui.select('', options, pr.current ? pr.current.id : options[0].value, id => {
-					stopPath();
-					pr.current = pr.list.find(p => p.id === id) || pr.current;
-					R.setRuntime('lastPathId', id);
-					R.ui.refreshPanel(true);
-				})
-			: ui.hint(t('r.pathEmpty'));
-		if (!pr.current && pr.list.length) pr.current = pr.list[0];
 		const cur = pr.current;
+		if (cur) body.appendChild(ui.hint(cur.name + ' · ' + t('opt.pathKeyframes', {n: cur.keyframes.length, d: pathDuration(cur).toFixed(1)})));
 		body.appendChild(
-			ui.section(
-				t('r.paths'),
-				pathSel,
-				cur ? ui.hint(t('opt.pathKeyframes', {n: cur.keyframes.length, d: pathDuration(cur).toFixed(1)}) + ' · ' + t('cam.timeBase.' + (cur.timeBase || 'song'))) : null,
-				ui.row(
-					ui.button(pr.playing ? '⏹ ' + t('r.pathStop') : '▶ ' + t('r.pathPlay'), togglePath, {active: pr.playing, disabled: !cur}),
-					ui.button(pr.recording ? '⏹ ' + t('r.pathStopRecord') : '⏺ ' + t('r.pathRecord'), startRecording, {active: pr.recording}),
-					ui.button('＋ ' + t('r.pathKeyframe'), addKeyframe)
-				),
-				ui.row(
-					cur && (cur.shared || !pr.list.some(p => p.id === cur.id))
-						? ui.button('💾 ' + t('common.save'), async () => {
-								await savePath(cur);
-								R.ui.refreshPanel(true);
-							})
-						: null,
-					ui.button('✎', () => {
-						if (!cur) return;
-						const name = window.prompt(t('r.pathName'), cur.name);
-						if (!name) return;
-						cur.name = name.slice(0, 80);
-						savePath(cur).then(() => R.ui.refreshPanel(true));
-					}, {title: t('common.rename'), disabled: !cur, className: 'blp-r-icon'}),
-					ui.button('🗑', async () => {
-						if (!cur) return;
-						stopPath();
-						await R.request('deletePath', {id: cur.id}).catch(() => {});
-						pr.list = pr.list.filter(p => p.id !== cur.id);
-						pr.current = pr.list[0] || null;
-						R.ui.refreshPanel(true);
-					}, {title: t('common.delete'), disabled: !cur, className: 'blp-r-icon'}),
-					ui.button('⬇', exportPath, {title: t('r.exportPath'), disabled: !cur, className: 'blp-r-icon'}),
-					ui.button('🔗', sharePathLink, {title: t('r.sharePath'), disabled: !cur, className: 'blp-r-icon'}),
-					ui.button('⬆', importPath, {title: t('r.pathImport'), className: 'blp-r-icon'})
-				)
+			ui.row(
+				ui.button(pr.playing ? '⏹' : '▶', togglePath, {active: pr.playing, disabled: !cur, title: t(pr.playing ? 'r.pathStop' : 'r.pathPlay')}),
+				ui.button(pr.recording ? '⏹ ' + t('r.pathStopRecord') : '⏺ ' + t('r.pathRecord'), startRecording, {active: pr.recording}),
+				ui.button('＋', addKeyframe, {title: t('r.pathKeyframe')})
+			)
+		);
+		body.appendChild(
+			ui.row(
+				cur && (cur.shared || !pr.list.some(p => p.id === cur.id)) ? ui.button('💾', () => savePath(cur).then(refreshUi), {title: t('common.save')}) : null,
+				ui.button('✎', renameCurrentPath, {title: t('common.rename'), disabled: !cur}),
+				ui.button('🗑', deleteCurrentPath, {title: t('common.delete'), disabled: !cur}),
+				ui.button('⬇', exportPath, {title: t('r.exportPath'), disabled: !cur}),
+				ui.button('🔗', sharePathLink, {title: t('r.sharePath'), disabled: !cur}),
+				ui.button('⬆', importPath, {title: t('r.pathImport')})
 			)
 		);
 	}
@@ -867,8 +779,6 @@
 		presets: presets().map(p => ({id: p.id, name: p.name})),
 		path: cam.path.current ? {name: cam.path.current.name, playing: cam.path.playing, recording: cam.path.recording} : null,
 	});
-	/** Visuals module hides the headset model while the camera sits inside it. */
-	R.cameraWantsHeadsetHidden = () => cam.mode === 'fpvSmooth';
 
 	R.camera = {
 		setMode,
@@ -904,12 +814,15 @@
 				up: new THREE.Vector3(0, 1, 0),
 			};
 			cam.current = {pos: new THREE.Vector3(), quat: new THREE.Quaternion()};
-			cam.free.pos = new THREE.Vector3();
 			if (mainEl()) readPose(cam.current);
-			installInput();
+			installSprint();
+			// The official Left / Center / Right buttons hand control back to the official camera.
+			['cameraToLeft', 'cameraToCenter', 'cameraToRight', 'cameraRestore'].forEach(id => {
+				const el = document.getElementById(id);
+				if (el) el.addEventListener('click', () => DRIVEN.has(cam.mode) && setMode('default', {silent: true}), true);
+			});
 
 			R.addHotkey('cycleCamera', cycleMode);
-			R.addHotkey('freeCamera', () => setMode(cam.mode === 'free' ? 'default' : 'free'));
 			R.addHotkey('pathPlay', togglePath);
 			R.addHotkey('pathRecord', startRecording);
 			R.addHotkey('pathKeyframe', addKeyframe);
@@ -917,10 +830,15 @@
 
 			R.onCommand('setCameraMode', ({mode}) => setMode(mode));
 			R.onCommand('applyPreset', ({id}) => applyPreset(findPreset(id)));
-			R.onCommand('togglePanel', () => R.ui && R.ui.togglePanel());
-			R.ui.addTab({id: 'camera', icon: '🎥', title: t('r.tab.camera'), order: 10, render: renderTab});
+
+			R.ui.addCameraSection({id: 'quick', placement: 'quick', order: 0, render: renderQuick});
+			R.ui.addCameraSection({id: 'free', order: 10, title: () => t('h.cameraFree'), render: renderFreeSection});
+			R.ui.addCameraSection({id: 'modes', order: 20, title: () => t('cam.mode.orbit') + ' / ' + t('cam.mode.follow'), render: renderModesSection});
+			R.ui.addCameraSection({id: 'presets', order: 30, title: () => t('r.presets'), render: renderPresetsSection});
+			R.ui.addCameraSection({id: 'paths', order: 40, title: () => t('r.paths'), render: renderPathsSection});
 		},
 		async onReady() {
+			applyFreeCamera();
 			await loadPaths();
 			await applyStartup();
 		},
@@ -928,33 +846,20 @@
 			if (!ctx) return;
 			if (!R.active()) {
 				if (cam.mode !== 'default') setMode('default', {silent: true, noRemember: true});
+				applyFov(80);
+				applyFreeCamera();
 				return;
 			}
 			applyFov();
+			applyFreeCamera();
 		},
 		tick(frame) {
 			if (!mainEl()) return;
 			const dt = frame.dt;
-			switch (cam.mode) {
-				case 'free':
-					updateFree(dt);
-					break;
-				case 'orbit':
-					updateOrbit(dt);
-					break;
-				case 'follow':
-					updateFollow(dt);
-					break;
-				case 'fpvSmooth':
-					updateFpv(dt);
-					break;
-				case 'path':
-					updatePath(frame, dt);
-					break;
-				case 'transition':
-					updateTransition(dt);
-					break;
-			}
+			if (cam.mode === 'orbit') updateOrbit(dt);
+			else if (cam.mode === 'follow') updateFollow(dt);
+			else if (cam.mode === 'path') updatePath(frame, dt);
+			else if (cam.mode === 'transition') updateTransition(dt);
 			if (cam.path.recording) recordSample(frame);
 		},
 		maintain() {

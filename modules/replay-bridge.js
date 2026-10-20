@@ -36,7 +36,7 @@
 		'injected/camera.js',
 		'injected/visuals.js',
 		'injected/playback.js',
-		'injected/overlays.js',
+		'injected/hud.js',
 		'injected/audio.js',
 		'injected/export.js',
 		'injected-replay.js',

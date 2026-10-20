@@ -1,16 +1,20 @@
 /*
- * BeatLeaderPlus – playback controls (PAGE world).
+ * BeatLeaderPlus – playback additions (PAGE world).
+ *
+ * The replayer already has speed controls (slider, +/- keys, wheel), beat stepping (, .),
+ * "Change speed around mistakes", loop-on-finish and timeline markers. This module adds what it
+ * doesn't have and extends what it does:
  *
  *   - frame-by-frame stepping (next recorded replay frame, or a fixed step)
  *   - reverse playback (paused, scrubbing backwards at a configurable rate)
  *   - A-B section loop with optional pre-roll
- *   - bookmarks with notes, stored per replay and drawn on the timeline
- *   - automatic slow motion around misses / bad cuts / bombs / low-accuracy cuts
- *   - fine speed control (hotkeys, mouse wheel), remembered speed and jump distance
- *   - accuracy graph above the official timeline
+ *   - bookmarks with notes, stored per replay and drawn on the replayer's timeline
+ *   - low-accuracy cuts as an extra trigger for the replayer's own slow motion (its
+ *     computeMissWindows() is wrapped; its speed and offsets are used)
+ *   - remembered speed / jump distance across sessions
+ *   - an accuracy graph above the replayer's timeline
  *
- * Speed changes go through BLPR.api.setSpeed which keeps song-controls' baseSongSpeed in sync
- * (song-controls re-applies that value every frame).
+ * Controls live in Settings → BL+ ("Playback" and "Timeline" sections).
  */
 (function () {
 	'use strict';
@@ -25,8 +29,6 @@
 		reverse: {active: false, timer: null},
 		loop: {a: null, b: null},
 		bookmarks: {key: null, title: '', scoreId: null, items: []},
-		slow: {windows: [], active: false, saved: null},
-		burst: {timer: null, saved: null},
 		lastKnownSpeed: null,
 		restoredFor: null,
 		tl: null,
@@ -34,6 +36,7 @@
 
 	const cfg = () => R.settings.playback;
 	const fmt = sec => U.formatTime(sec, true);
+	const refreshUi = () => R.ui && R.ui.refresh(true);
 
 	/* ------------------------------------------------------------------ frame stepping */
 
@@ -83,7 +86,7 @@
 			R.api.seek(next);
 		}, 1000 / rate);
 		R.api.notify(t('r.reverseOn'), 'fas fa-backward');
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function stopReverse(announce) {
@@ -92,7 +95,7 @@
 		clearInterval(pb.reverse.timer);
 		pb.reverse.timer = null;
 		if (announce) R.api.notify(t('r.reverseOff'), 'fas fa-pause');
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	const toggleReverse = () => (pb.reverse.active ? stopReverse(true) : startReverse());
@@ -129,7 +132,7 @@
 
 	function loopChanged() {
 		drawTimeline();
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	/* ------------------------------------------------------------------ bookmarks */
@@ -143,7 +146,7 @@
 			R.log.warn('could not load bookmarks', e);
 		}
 		drawTimeline();
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	const saveBookmarks = U.debounce(() => {
@@ -160,14 +163,14 @@
 		saveBookmarks();
 		R.api.notify(t('r.bookmarkAdded', {time: fmt(time)}), 'fas fa-bookmark');
 		drawTimeline();
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function removeBookmark(item) {
 		pb.bookmarks.items = pb.bookmarks.items.filter(b => b !== item);
 		saveBookmarks();
 		drawTimeline();
-		R.ui && R.ui.refreshPanel(true);
+		refreshUi();
 	}
 
 	function nextBookmark() {
@@ -177,100 +180,61 @@
 		R.api.seek(next.t);
 	}
 
-	/* ------------------------------------------------------------------ slow motion */
+	/* ------------------------------------------------------------------ official slow motion + low-acc cuts */
 
-	function buildSlowWindows() {
-		const c = cfg().autoSlowMo;
-		const notes = (R.replayInfo && R.replayInfo.notes) || [];
-		const raw = [];
+	function addLowAccWindows(sc) {
+		const p = cfg();
+		const s = (sc.settings && sc.settings.settings) || {};
+		if (!R.active() || !p.slowOnLowAcc || !s.autoSpeedControls) return;
+		const notes = sc.replayData && sc.replayData.notes;
+		if (!notes) return;
+		const startOffset = parseFloat(s.offsetSlowBeginning || 0);
+		const endOffset = parseFloat(s.offsetSlowEnding || 0);
+		const threshold = Number(p.lowAccThreshold) || 100;
+		const windows = (sc.missWindows || []).slice();
 		for (const n of notes) {
-			const k = R.api.noteKind(n);
-			const trigger =
-				(k === 'miss' && c.onMiss) ||
-				(k === 'bad' && c.onBadCut) ||
-				(k === 'bomb' && c.onBomb) ||
-				(k === 'good' && c.onLowAcc && n.score > 0 && n.score < Number(c.lowAccThreshold));
-			if (trigger) raw.push([n.time - (Number(c.before) || 0), n.time + (Number(c.after) || 0)]);
+			if (!n || !(n.score > 0) || n.score >= threshold) continue;
+			const start = Math.max(0, n.time + startOffset);
+			windows.push([start, Math.max(start, n.time + endOffset)]);
 		}
-		raw.sort((a, b) => a[0] - b[0]);
+		windows.sort((a, b) => a[0] - b[0]);
 		const merged = [];
-		for (const w of raw) {
+		for (const w of windows) {
 			const last = merged[merged.length - 1];
 			if (last && w[0] <= last[1]) last[1] = Math.max(last[1], w[1]);
 			else merged.push(w.slice());
 		}
-		pb.slow.windows = merged;
+		sc.missWindows = merged;
 	}
 
-	function inSlowWindow(time) {
-		const w = pb.slow.windows;
-		let lo = 0;
-		let hi = w.length - 1;
-		while (lo <= hi) {
-			const mid = (lo + hi) >> 1;
-			if (time < w[mid][0]) hi = mid - 1;
-			else if (time > w[mid][1]) lo = mid + 1;
-			else return true;
+	/** Wrap the replayer's computeMissWindows() so low-accuracy cuts become extra slow-mo windows. */
+	function hookOfficialSlowMo() {
+		const sc = ctx.songControls();
+		if (!sc || typeof sc.computeMissWindows !== 'function') return;
+		if (!sc.__blpSlowHooked) {
+			const orig = sc.computeMissWindows;
+			sc.computeMissWindows = function (...args) {
+				const result = orig.apply(this, args);
+				try {
+					addLowAccWindows(this);
+				} catch (e) {
+					R.log.warn('low-acc slow-mo failed', e);
+				}
+				return result;
+			};
+			sc.__blpSlowHooked = true;
 		}
-		return false;
+		sc.computeMissWindows();
 	}
 
-	function endSlow() {
-		if (!pb.slow.active) return;
-		pb.slow.active = false;
-		if (pb.slow.saved !== null) R.api.setSpeed(pb.slow.saved, {internal: true});
-		pb.slow.saved = null;
+	function officialSlowMoOn() {
+		const os = ctx.officialSettings();
+		return !!(os && os.settings && os.settings.autoSpeedControls);
 	}
 
-	function updateSlowMo(frame) {
-		const c = cfg().autoSlowMo;
-		if (!c.enabled) return endSlow();
-		if (!frame.playing || pb.reverse.active) return;
-		const inside = inSlowWindow(frame.time);
-		if (inside && !pb.slow.active) {
-			pb.slow.saved = R.api.getSpeed();
-			pb.slow.active = true;
-			R.api.setSpeed(Math.min(Number(c.speed) || 0.25, pb.slow.saved), {internal: true});
-		} else if (!inside && pb.slow.active) endSlow();
-	}
-
-	/** Short real-time slow-motion burst (used by the visuals "slow-mo burst" effect). */
-	function burst(speed, duration) {
-		if (pb.slow.active || !R.api.isPlaying()) return;
-		if (!pb.burst.timer) pb.burst.saved = R.api.getSpeed();
-		clearTimeout(pb.burst.timer);
-		R.api.setSpeed(Math.min(speed, pb.burst.saved), {internal: true});
-		pb.burst.timer = setTimeout(() => {
-			pb.burst.timer = null;
-			if (pb.burst.saved !== null) R.api.setSpeed(pb.burst.saved, {internal: true});
-			pb.burst.saved = null;
-		}, Math.max(50, duration * 1000));
-	}
-
-	/* ------------------------------------------------------------------ speed & JD */
-
-	function changeSpeed(delta) {
-		const v = U.clamp(U.round(R.api.getSpeed() + delta, 4), 0, 2);
-		R.api.setSpeed(v);
-		R.api.notify(t('r.speedLabel', {v: v.toFixed(2)}), 'fas fa-gauge-simple');
-	}
-
-	function onSpeed({value, internal}) {
-		if (internal) return;
-		// The user took control: cancel any automatic slow motion restore.
-		pb.slow.active = false;
-		pb.slow.saved = null;
-		if (pb.burst.timer) {
-			clearTimeout(pb.burst.timer);
-			pb.burst.timer = null;
-			pb.burst.saved = null;
-		}
-		pb.lastKnownSpeed = value;
-		if (cfg().persistSpeed) R.setRuntime('lastSpeed', value);
-	}
+	/* ------------------------------------------------------------------ remembered speed & JD */
 
 	function watchOfficialSpeed() {
-		if (pb.slow.active || pb.burst.timer) return;
 		const sp = R.api.getSpeed();
 		if (pb.lastKnownSpeed !== null && Math.abs(sp - pb.lastKnownSpeed) > 1e-6 && cfg().persistSpeed) R.setRuntime('lastSpeed', sp);
 		pb.lastKnownSpeed = sp;
@@ -291,28 +255,6 @@
 			const lastJd = Number(R.runtime.lastJd);
 			if (s.persistJd && !params.has('jd') && lastJd > 0) R.api.setJd(lastJd);
 		}, 250);
-	}
-
-	function installInputs() {
-		const jd = document.getElementById('jd');
-		if (jd) jd.addEventListener('input', () => cfg().persistJd && R.setRuntime('lastJd', Number(jd.value)));
-		const canvas = ctx.canvas;
-		if (canvas) {
-			canvas.addEventListener(
-				'wheel',
-				e => {
-					const s = cfg();
-					if (!R.active() || !s.wheelSpeed) return;
-					const mod = s.wheelModifier || 'Alt';
-					const ok = mod === 'None' ? !e.altKey && !e.ctrlKey && !e.shiftKey : (mod === 'Alt' && e.altKey) || (mod === 'Shift' && e.shiftKey) || (mod === 'Ctrl' && e.ctrlKey);
-					if (!ok) return;
-					e.preventDefault();
-					e.stopPropagation();
-					changeSpeed((e.deltaY < 0 ? 1 : -1) * (Number(s.speedStep) || 0.05));
-				},
-				{passive: false}
-			);
-		}
 	}
 
 	/* ------------------------------------------------------------------ timeline graph & markers */
@@ -344,7 +286,6 @@
 		tl.marks.textContent = '';
 		if (!show || !(dur > 0)) return;
 
-		// Bookmarks and loop markers
 		if (s.bookmarksOnTimeline) {
 			for (const b of pb.bookmarks.items) {
 				const m = document.createElement('div');
@@ -358,15 +299,15 @@
 				});
 				tl.marks.appendChild(m);
 			}
-			if (pb.loop.a !== null) {
-				const region = document.createElement('div');
-				region.className = 'blp-r-loop-region' + (pb.loop.b === null ? ' blp-r-loop-open' : '');
-				const a = (pb.loop.a / dur) * 100;
-				const b = pb.loop.b !== null ? (pb.loop.b / dur) * 100 : a;
-				region.style.left = a + '%';
-				region.style.width = Math.max(0.3, b - a) + '%';
-				tl.marks.appendChild(region);
-			}
+		}
+		if (pb.loop.a !== null) {
+			const region = document.createElement('div');
+			region.className = 'blp-r-loop-region' + (pb.loop.b === null ? ' blp-r-loop-open' : '');
+			const a = (pb.loop.a / dur) * 100;
+			const b = pb.loop.b !== null ? (pb.loop.b / dur) * 100 : a;
+			region.style.left = a + '%';
+			region.style.width = Math.max(0.3, b - a) + '%';
+			tl.marks.appendChild(region);
 		}
 
 		if (!s.timelineGraph) return;
@@ -403,65 +344,47 @@
 		g.strokeStyle = grad;
 		g.lineWidth = 1.5;
 		g.stroke();
-		// mistakes
-		g.fillStyle = '#ff1744';
-		for (const n of notes) {
-			const k = R.api.noteKind(n);
-			if (k === 'miss' || k === 'bad' || k === 'bomb') g.fillRect(X(n.time) - 0.75, h - 6, 1.5, 6);
-		}
 		g.fillStyle = 'rgba(255,255,255,0.7)';
 		g.font = '9px system-ui, sans-serif';
 		g.fillText(maxAcc.toFixed(1) + '%', 2, 9);
 		g.fillText(minAcc.toFixed(1) + '%', 2, h - 8);
 	}
 
-	/* ------------------------------------------------------------------ panel tab */
+	/* ------------------------------------------------------------------ Settings → BL+ sections */
 
-	function renderTab(body) {
+	function renderPlayback(body) {
 		const ui = R.ui;
 		const s = cfg();
-		const playing = R.api.isPlaying();
-		body.appendChild(
-			ui.section(
-				null,
-				ui.row(
-					ui.button(t('r.frameBack'), () => frameStep(-1), {title: t('hk.frameBack')}),
-					ui.button(playing ? '⏸' : '▶', () => {
-						stopReverse();
-						R.api.togglePlay();
-						setTimeout(() => R.ui.refreshPanel(true), 100);
-					}),
-					ui.button(t('r.frameForward'), () => frameStep(1), {title: t('hk.frameForward')}),
-					ui.button('⏪ ' + t('r.reverse'), toggleReverse, {active: pb.reverse.active})
-				),
-				ui.slider(t('r.speed'), {min: 0, max: 2, step: Number(s.speedStep) || 0.05, value: R.api.getSpeed(), format: v => v.toFixed(2) + '×'}, v => R.api.setSpeed(v)),
-				ui.row(
-					ui.button('0.25×', () => R.api.setSpeed(0.25)),
-					ui.button('0.5×', () => R.api.setSpeed(0.5)),
-					ui.button('1×', () => R.api.setSpeed(1)),
-					ui.button('1.5×', () => R.api.setSpeed(1.5))
-				)
-			)
-		);
 		const L = pb.loop;
 		body.appendChild(
-			ui.section(
-				t('r.loop'),
-				ui.row(
-					ui.button(t('r.setA'), () => setLoopA(), {active: L.a !== null}),
-					ui.button(t('r.setB'), () => setLoopB(), {active: L.b !== null}),
-					ui.button(t('common.clear'), () => clearLoop(), {disabled: L.a === null})
-				),
-				L.a !== null ? ui.hint('A ' + fmt(L.a) + (L.b !== null ? '  →  B ' + fmt(L.b) : '')) : null
+			ui.row(
+				ui.button('◀', () => frameStep(-1), {title: t('hk.frameBack') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.frameBack')) + ')'}),
+				ui.button('⏪', toggleReverse, {active: pb.reverse.active, title: t('hk.reverse') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.reverse')) + ')'}),
+				ui.button('▶', () => frameStep(1), {title: t('hk.frameForward') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.frameForward')) + ')'})
 			)
 		);
 		body.appendChild(
-			ui.section(
-				t('h.playSlowMo'),
-				ui.toggle(t('f.playback.autoSlowMo.enabled'), s.autoSlowMo.enabled, v => R.setPath('playback.autoSlowMo.enabled', v)),
-				ui.slider(t('f.playback.autoSlowMo.speed'), {min: 0.05, max: 1, step: 0.05, value: s.autoSlowMo.speed, format: v => v.toFixed(2) + '×'}, v => R.setPath('playback.autoSlowMo.speed', v))
+			ui.row(
+				ui.button('A', () => setLoopA(), {active: L.a !== null, title: t('r.setA')}),
+				ui.button('B', () => setLoopB(), {active: L.b !== null, title: t('r.setB')}),
+				ui.button('✕', () => clearLoop(), {disabled: L.a === null, title: t('r.loopCleared')}),
+				L.a !== null ? ui.h('span', {class: 'blp-r-hint blp-r-inline'}, fmt(L.a) + (L.b !== null ? ' → ' + fmt(L.b) : '')) : null
 			)
 		);
+		body.appendChild(ui.toggle(t('f.playback.persistSpeed'), s.persistSpeed, v => R.setPath('playback.persistSpeed', v)));
+		body.appendChild(ui.toggle(t('f.playback.persistJd'), s.persistJd, v => R.setPath('playback.persistJd', v)));
+		body.appendChild(ui.toggle(t('f.playback.slowOnLowAcc'), s.slowOnLowAcc, v => R.setPath('playback.slowOnLowAcc', v), t('d.playback.slowOnLowAcc')));
+		if (s.slowOnLowAcc) {
+			body.appendChild(ui.range(t('f.playback.lowAccThreshold'), {min: 60, max: 115, step: 1, value: s.lowAccThreshold}, v => R.setPath('playback.lowAccThreshold', v)));
+			if (!officialSlowMoOn()) body.appendChild(ui.hint(t('r.slowmoOff')));
+		}
+	}
+
+	function renderTimeline(body) {
+		const ui = R.ui;
+		const s = cfg();
+		body.appendChild(ui.toggle(t('f.playback.timelineGraph'), s.timelineGraph, v => R.setPath('playback.timelineGraph', v)));
+		body.appendChild(ui.toggle(t('f.playback.bookmarksOnTimeline'), s.bookmarksOnTimeline, v => R.setPath('playback.bookmarksOnTimeline', v)));
 		const list = ui.h('div', {class: 'blp-r-list'});
 		if (!pb.bookmarks.items.length) list.appendChild(ui.hint(t('r.noBookmarks')));
 		for (const b of pb.bookmarks.items) {
@@ -469,7 +392,7 @@
 				ui.h(
 					'div',
 					{class: 'blp-r-list-item'},
-					ui.button(fmt(b.t), () => R.api.seek(b.t), {title: t('common.jump')}),
+					ui.button(U.formatTime(b.t, false), () => R.api.seek(b.t), {title: t('common.jump')}),
 					ui.input(b.note, {
 						placeholder: t('common.notes'),
 						onChange: v => {
@@ -478,24 +401,26 @@
 							drawTimeline();
 						},
 					}),
-					ui.button('✕', () => removeBookmark(b), {className: 'blp-r-icon', title: t('common.delete')})
+					ui.button('✕', () => removeBookmark(b), {title: t('common.delete')})
 				)
 			);
 		}
-		body.appendChild(ui.section(t('r.bookmarks'), list, ui.row(ui.button('🔖 ' + t('r.addBookmark'), () => addBookmark(), {primary: true, disabled: !pb.bookmarks.key}))));
+		body.appendChild(list);
+		body.appendChild(ui.row(ui.button('🔖 ' + t('r.addBookmark'), () => addBookmark(), {disabled: !pb.bookmarks.key})));
 	}
 
 	/* ------------------------------------------------------------------ module */
 
-	R.playback = {burst, frameStep, addBookmark, setLoopA, setLoopB, clearLoop, toggleReverse};
+	R.playback = {frameStep, addBookmark, setLoopA, setLoopB, clearLoop, toggleReverse, drawTimeline};
 
 	R.register({
 		name: 'playback',
 		init(c) {
 			ctx = c;
-			installInputs();
-			R.on('speed', onSpeed);
+			const jd = document.getElementById('jd');
+			if (jd) jd.addEventListener('input', () => cfg().persistJd && R.setRuntime('lastJd', Number(jd.value)));
 			R.on('songstart', restoreSpeedAndJd);
+			R.on('overlays', drawTimeline);
 			R.on('replayunload', () => {
 				stopReverse();
 				clearLoop(true);
@@ -509,12 +434,6 @@
 			R.addHotkey('loopClear', () => clearLoop());
 			R.addHotkey('addBookmark', () => addBookmark());
 			R.addHotkey('nextBookmark', nextBookmark);
-			R.addHotkey('speedUp', () => changeSpeed(Number(cfg().speedStep) || 0.05), {repeat: true});
-			R.addHotkey('speedDown', () => changeSpeed(-(Number(cfg().speedStep) || 0.05)), {repeat: true});
-			R.addHotkey('speedReset', () => {
-				R.api.setSpeed(1);
-				R.api.notify(t('r.speedLabel', {v: '1.00'}), 'fas fa-gauge-simple');
-			});
 			const playlistStep = dir => {
 				const pl = ctx.playlist();
 				const fn = pl && (dir > 0 ? pl.next : pl.previous);
@@ -524,26 +443,26 @@
 			};
 			R.onCommand('nextReplay', () => playlistStep(1));
 			R.onCommand('prevReplay', () => playlistStep(-1));
-			R.ui.addTab({id: 'playback', icon: '⏯', title: t('r.tab.playback'), order: 20, render: renderTab});
+			R.ui.addSettingsSection({id: 'playback', order: 50, title: () => t('r.sect.playback'), render: renderPlayback});
+			R.ui.addSettingsSection({id: 'timeline', order: 60, title: () => t('r.sect.timeline'), render: renderTimeline});
 			window.addEventListener('resize', U.debounce(drawTimeline, 200));
 		},
 		onReady() {
 			pb.lastKnownSpeed = R.api.getSpeed();
+			hookOfficialSlowMo();
 			if (R.api.isPlaying()) restoreSpeedAndJd();
 		},
 		onSettings() {
 			if (!ctx) return;
-			buildSlowWindows();
-			if (!R.active()) {
-				endSlow();
-				stopReverse();
-			}
+			if (!R.active()) stopReverse();
+			hookOfficialSlowMo();
 			drawTimeline();
 		},
 		onReplay(info) {
-			buildSlowWindows();
 			loadBookmarks(info);
 			if (R.api.isPlaying()) restoreSpeedAndJd();
+			// The replayer computes its windows on replay load; add ours once its data is in place.
+			setTimeout(hookOfficialSlowMo, 300);
 			setTimeout(drawTimeline, 500);
 		},
 		tick(frame) {
@@ -551,12 +470,10 @@
 			if (L.a !== null && L.b !== null && frame.playing && frame.time >= L.b && !R.api.seekBusy()) {
 				R.api.seek(Math.max(0, L.a - (Number(cfg().loopPreRoll) || 0)));
 			}
-			updateSlowMo(frame);
 		},
 		maintain() {
 			watchOfficialSpeed();
 			if (pb.tl && !pb.tl.canvas.isConnected) drawTimeline();
 		},
 	});
-	R.on('overlays', drawTimeline);
 })();
