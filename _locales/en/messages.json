@@ -1,0 +1,18 @@
+{
+  "extName": {
+    "message": "BeatLeaderPlus",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Customizable enhancements for BeatLeader: themes, favorites, downloads and a supercharged web replay viewer (cameras, visuals, overlays, hitsounds, export).",
+    "description": "Extension description shown in the Chrome Web Store and extensions page"
+  },
+  "extActionTitle": {
+    "message": "BeatLeaderPlus",
+    "description": "Toolbar button tooltip"
+  },
+  "cmdOpenPopup": {
+    "message": "Open the BeatLeaderPlus popup",
+    "description": "Keyboard command description"
+  }
+}

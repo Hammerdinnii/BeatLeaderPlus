@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>BeatLeaderPlus options</title>
+		<link rel="icon" href="icons/icon32.png" />
+		<link rel="stylesheet" href="options.css" />
+	</head>
+	<body>
+		<aside class="sidebar">
+			<div class="brand">
+				<img src="icons/icon128.png" alt="" />
+				<div>
+					<strong>BeatLeaderPlus</strong>
+					<span id="version" class="muted"></span>
+				</div>
+			</div>
+			<div class="search">
+				<input id="search" type="search" autocomplete="off" data-i18n-placeholder="opt.search" />
+			</div>
+			<nav id="nav"></nav>
+			<p class="muted sidebar-foot" data-i18n="opt.liveApply"></p>
+		</aside>
+
+		<main>
+			<div class="topbar">
+				<label class="scope">
+					<span data-i18n="opt.scope"></span>
+					<select id="scope"></select>
+				</label>
+				<span id="scopeHint" class="muted"></span>
+				<span class="spacer"></span>
+				<span id="saveStatus" class="save-status"></span>
+			</div>
+			<div id="content" class="content"></div>
+			<p id="noResults" class="no-results hidden"></p>
+		</main>
+
+		<script src="lib/i18n.js"></script>
+		<script src="lib/defaults.js"></script>
+		<script src="lib/utils.js"></script>
+		<script src="lib/storage.js"></script>
+		<script src="lib/schema.js"></script>
+		<script src="lib/zip.js"></script>
+		<script src="options.js"></script>
+	</body>
+</html>
