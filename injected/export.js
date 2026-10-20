@@ -1,13 +1,15 @@
 /*
  * BeatLeaderPlus – export & sharing (PAGE world).
  *
- *   - "Copy replay link with my settings": the official URL parameters (time, speed, jd, cpx/cpy/
- *     cpz/crx/cry camera, forceFpv) work for everyone; BLP-only state (camera mode, colors,
- *     overlay layout) is packed into blpCfg (deflate + base64url) and applied as session-only
- *     overrides when the link is opened with BeatLeaderPlus installed.
- *   - screenshots at any resolution, optionally with the stats overlay painted in
+ * Added to the replayer's right-click menu (next to its own "Copy URL …" items) and to
+ * Settings → BL+:
+ *
+ *   - "Copy URL with BL+ camera and colors": the replayer's own parameters (time, speed, jd,
+ *     cpx/cpy/cpz/crx/cry, forceFpv) plus BLP-only state (orbit / follow camera, note / trail
+ *     colors, styles, accuracy heat) packed into blpCfg (deflate + base64url). blpCfg is applied
+ *     as session-only overrides when the link is opened with BeatLeaderPlus installed.
+ *   - screenshots at any resolution
  *   - clip recording of the WebGL canvas with MediaRecorder (+ song audio)
- *   - export of the current settings as JSON (importable from the options page)
  */
 (function () {
 	'use strict';
@@ -28,8 +30,6 @@
 		const out = {mode, fov: c.fov, smoothing: c.smoothing};
 		if (mode === 'orbit') out.orbit = c.orbit;
 		if (mode === 'follow') out.follow = c.follow;
-		if (mode === 'fpvSmooth') out.fpv = c.fpv;
-		if (mode === 'free') out.free = {speed: c.free.speed};
 		return out;
 	}
 
@@ -37,23 +37,19 @@
 		const v = R.settings.visuals;
 		const out = {};
 		const sabers = {};
-		if (v.sabers.override) Object.assign(sabers, {override: true, leftColor: v.sabers.leftColor, rightColor: v.sabers.rightColor});
 		if (v.sabers.trailOverride) {
-			['trailOverride', 'trailMatchSaber', 'leftTrailColor', 'rightTrailColor', 'trailLength', 'trailWidth', 'trailOpacity'].forEach(k => (sabers[k] = v.sabers[k]));
+			['trailOverride', 'trailMatchSaber', 'leftTrailColor', 'rightTrailColor', 'trailWidth', 'trailOpacity'].forEach(k => (sabers[k] = v.sabers[k]));
 		}
 		if (v.sabers.style !== 'default' && v.sabers.style !== 'custom') sabers.style = v.sabers.style;
 		if (v.sabers.glowIntensity !== 100) sabers.glowIntensity = v.sabers.glowIntensity;
-		if (v.sabers.thickness !== 100) sabers.thickness = v.sabers.thickness;
 		if (Object.keys(sabers).length) out.sabers = sabers;
-		if (v.notes.override || v.notes.bombOverride || v.notes.chainOverride || v.notes.arcOverride) out.notes = v.notes;
-		if (v.environment.override) out.environment = v.environment;
+		if (v.notes.override || v.notes.chainOverride || v.notes.arcOverride) out.notes = v.notes;
 		if (v.accuracyHeat.enabled) out.accuracyHeat = v.accuracyHeat;
 		return out;
 	}
 
 	async function buildShareLink() {
-		const s = R.settings;
-		const L = s.export.link;
+		const L = R.settings.export.link;
 		const src = new URL(location.href);
 		const url = new URL(location.origin + location.pathname);
 		for (const k of KEEP_PARAMS) if (src.searchParams.has(k)) url.searchParams.set(k, src.searchParams.get(k));
@@ -80,7 +76,7 @@
 				url.searchParams.set('cry', lc.yawObject.rotation.y.toFixed(3));
 			} else if (mode === 'pov') {
 				url.searchParams.set('forceFpv', '1');
-			} else if (mode !== 'path') {
+			} else if (mode === 'orbit' || mode === 'follow') {
 				url.searchParams.set('blpMode', mode);
 				cfg.camera = cameraConfig(mode);
 			}
@@ -88,10 +84,6 @@
 		if (L.includeColors) {
 			const v = visualsConfig();
 			if (Object.keys(v).length) cfg.visuals = v;
-		}
-		if (L.includeOverlay) {
-			const o = s.overlay;
-			cfg.overlay = {enabled: o.enabled, position: o.position, x: o.x, y: o.y, scale: o.scale, opacity: o.opacity, style: o.style, stats: o.stats, graph: o.graph};
 		}
 		if (Object.keys(cfg).length) url.searchParams.set('blpCfg', await U.packForUrl(JSON.stringify(cfg)));
 		return url.toString();
@@ -112,10 +104,8 @@
 			const cfg = JSON.parse(await U.unpackFromUrl(packed));
 			const allowed = {};
 			if (U.isObject(cfg.camera)) {
-				const cam = Object.assign({}, cfg.camera);
-				delete cam.presets;
-				delete cam.defaultPreset;
-				delete cam.replaceOfficialUi;
+				const cam = {};
+				for (const k of ['fov', 'smoothing', 'orbit', 'follow']) if (cfg.camera[k] !== undefined) cam[k] = cfg.camera[k];
 				allowed.camera = cam;
 			}
 			if (U.isObject(cfg.visuals)) {
@@ -123,7 +113,6 @@
 				if (vis.sabers) delete vis.sabers.customModel;
 				allowed.visuals = vis;
 			}
-			if (U.isObject(cfg.overlay)) allowed.overlay = cfg.overlay;
 			R.setSessionOverrides(allowed);
 			R.log.info('applied shared link settings', allowed);
 		} catch (e) {
@@ -193,9 +182,7 @@
 		const out = document.createElement('canvas');
 		out.width = shot.w;
 		out.height = shot.h;
-		const g = out.getContext('2d');
-		g.drawImage(img, 0, 0, shot.w, shot.h);
-		if (s.includeOverlay && R.overlays) R.overlays.drawToCanvas(g, shot.w, shot.h);
+		out.getContext('2d').drawImage(img, 0, 0, shot.w, shot.h);
 		const mime = {png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp'}[s.format] || 'image/png';
 		const blob = await new Promise(resolve => out.toBlob(resolve, mime, 0.92));
 		U.downloadBlob(blob, baseFilename() + '.' + (s.format === 'jpeg' ? 'jpg' : s.format || 'png'));
@@ -242,8 +229,7 @@
 		clip.rec = new MediaRecorder(stream, {mimeType: mime || undefined, videoBitsPerSecond: U.clamp(Number(c.bitrateMbps) || 8, 1, 60) * 1e6});
 		clip.rec.ondataavailable = e => e.data && e.data.size && clip.chunks.push(e.data);
 		clip.rec.onstop = () => {
-			const blob = new Blob(clip.chunks, {type: 'video/webm'});
-			U.downloadBlob(blob, baseFilename() + '.webm');
+			U.downloadBlob(new Blob(clip.chunks, {type: 'video/webm'}), baseFilename() + '.webm');
 			if (clip.audio) {
 				try {
 					clip.audio.node.disconnect(clip.audio.dest);
@@ -254,24 +240,23 @@
 			stream.getTracks().forEach(tr => tr.stop());
 			Object.assign(clip, {rec: null, out: null, g: null, chunks: [], audio: null});
 			R.api.notify(t('r.clipSaved'), 'fas fa-film');
-			R.ui && R.ui.refreshPanel(true);
+			R.ui && R.ui.refresh(true);
 		};
 		clip.rec.start(250);
 		clip.startedAt = performance.now();
 		clip.timer = setTimeout(stopClip, U.clamp(Number(c.seconds) || 10, 1, 600) * 1000);
 		R.api.notify(t('r.clipRecording', {s: c.seconds}), 'fas fa-circle');
-		document.documentElement.classList.add('blp-r-recording');
-		R.ui && R.ui.refreshPanel(true);
+		R.ui && R.ui.refresh(true);
 		return true;
 	}
 
 	function stopClip() {
 		clearTimeout(clip.timer);
-		document.documentElement.classList.remove('blp-r-recording');
 		if (clip.rec && clip.rec.state !== 'inactive') clip.rec.stop();
 		return true;
 	}
 
+	/** Runs in the frame's tock (after rendering), while the WebGL buffer still holds the frame. */
 	function captureClipFrame() {
 		if (!clip.rec || !clip.g) return;
 		const gl = ctx.renderer.domElement;
@@ -280,106 +265,54 @@
 		const scale = Math.min(W / gl.width, H / gl.height);
 		const dw = gl.width * scale;
 		const dh = gl.height * scale;
-		const dx = (W - dw) / 2;
-		const dy = (H - dh) / 2;
 		const g = clip.g;
 		g.fillStyle = '#000';
 		g.fillRect(0, 0, W, H);
-		g.drawImage(gl, dx, dy, dw, dh);
-		if (R.settings.export.clip.includeOverlay && R.overlays) {
-			g.save();
-			g.translate(dx, dy);
-			R.overlays.drawToCanvas(g, dw, dh);
-			g.restore();
-		}
-		// recording indicator
-		const elapsed = (performance.now() - clip.startedAt) / 1000;
-		g.fillStyle = 'rgba(255, 23, 68, 0.9)';
-		g.beginPath();
-		g.arc(W - 18, 18, 6, 0, Math.PI * 2);
-		if (Math.floor(elapsed * 2) % 2 === 0) g.fill();
+		g.drawImage(gl, (W - dw) / 2, (H - dh) / 2, dw, dh);
 	}
 
-	/* ------------------------------------------------------------------ settings export */
+	/* ------------------------------------------------------------------ Settings → BL+ section */
 
-	function exportSettings() {
-		const data = {format: 'beatleaderplus-config', version: R.settings.schemaVersion, exportedAt: new Date().toISOString(), settings: R.settings};
-		U.downloadBlob(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}), 'BeatLeaderPlus-settings.json');
-		return true;
-	}
-
-	/* ------------------------------------------------------------------ panel tab */
-
-	function renderTab(body) {
+	function renderExport(body) {
 		const ui = R.ui;
-		const s = R.settings;
-		const shot = s.export.screenshot;
-		const clipCfg = s.export.clip;
+		const s = R.settings.export;
 		body.appendChild(
-			ui.section(
-				t('h.expLink'),
-				ui.row(ui.button('🔗 ' + t('r.copyLink'), copyLink, {primary: true})),
-				ui.hint(
-					['includeTime', 'includeSpeed', 'includeJd', 'includeCamera', 'includeColors', 'includeOverlay']
-						.filter(k => s.export.link[k])
-						.map(k => t('f.export.link.' + k))
-						.join(' · ')
-				)
+			ui.row(
+				ui.button('🔗 ' + t('r.copyLink'), () => copyLink().catch(e => R.ui.toast(String(e.message || e), 'error'))),
+				ui.button('📷 ' + t('r.screenshot'), () => screenshot().catch(e => R.ui.toast(String(e.message || e), 'error'))),
+				clipSupported() ? ui.button(clip.rec ? '⏹ ' + t('r.clipStop') : '⏺ ' + t('r.clip'), startClip, {active: !!clip.rec}) : null
 			)
 		);
-		body.appendChild(
-			ui.section(
-				t('h.expScreenshot'),
-				ui.row(ui.button('📷 ' + t('r.screenshot'), screenshot, {primary: true})),
-				ui.hint(shot.useWindowSize ? t('f.export.screenshot.useWindowSize') : shot.width + ' × ' + shot.height + ' · ' + String(shot.format).toUpperCase())
-			)
-		);
-		body.appendChild(
-			ui.section(
-				t('h.expClip'),
-				clipSupported()
-					? ui.row(ui.button(clip.rec ? '⏹ ' + t('r.clipStop') : '⏺ ' + t('r.clip'), startClip, {primary: !clip.rec, active: !!clip.rec}))
-					: ui.hint(t('r.clipUnsupported')),
-				ui.slider(t('f.export.clip.seconds'), {min: 2, max: 120, step: 1, value: clipCfg.seconds, unit: 's'}, v => R.setPath('export.clip.seconds', v)),
-				ui.hint(clipCfg.width + ' × ' + clipCfg.height + ' · ' + clipCfg.fps + ' fps · ' + clipCfg.bitrateMbps + ' Mbps')
-			)
-		);
-		const audio = s.audio;
-		body.appendChild(
-			ui.section(
-				t('r.quick'),
-				ui.toggle(t('f.overlay.enabled'), s.overlay.enabled, v => R.setPath('overlay.enabled', v)),
-				ui.select(
-					t('f.overlay.position'),
-					['top-left', 'top-right', 'bottom-left', 'bottom-right', 'custom'].map(p => ({value: p, label: t('pos.' + p)})),
-					s.overlay.position,
-					v => R.setPath('overlay.position', v)
-				),
-				ui.toggle(t('f.audio.enabled'), audio.enabled, v => R.setPath('audio.enabled', v)),
-				ui.slider(t('f.audio.master'), {min: 0, max: 100, step: 1, value: audio.master, unit: '%'}, v => R.setPath('audio.master', v)),
-				ui.row(...['good', 'bad', 'miss', 'bomb'].map(slot => ui.button('🔊 ' + t('opt.slot.' + slot), () => R.audio && R.audio.preview(slot)))),
-				ui.row(ui.button('⬇ ' + t('r.exportSettings'), exportSettings))
-			)
-		);
+		body.appendChild(ui.range(t('f.export.clip.seconds'), {min: 2, max: 120, step: 1, value: s.clip.seconds, unit: 's'}, v => R.setPath('export.clip.seconds', v)));
+		body.appendChild(ui.hint((s.screenshot.useWindowSize ? t('f.export.screenshot.useWindowSize') : s.screenshot.width + '×' + s.screenshot.height) + ' · ' + s.clip.width + '×' + s.clip.height + ' ' + s.clip.fps + 'fps'));
 	}
 
 	/* ------------------------------------------------------------------ module */
 
-	R.exporter = {buildShareLink, copyLink, screenshot, startClip, stopClip, exportSettings};
+	R.exporter = {buildShareLink, copyLink, screenshot, startClip, stopClip};
 
 	R.register({
 		name: 'export',
 		init(c) {
 			ctx = c;
-			R.addHotkey('screenshot', () => screenshot().catch(e => R.ui.toast(String(e.message || e), 'error')));
+			const fail = e => R.ui.toast(String(e.message || e), 'error');
+			R.addHotkey('screenshot', () => screenshot().catch(fail));
 			R.addHotkey('recordClip', startClip);
-			R.addHotkey('copyLink', () => copyLink().catch(e => R.ui.toast(String(e.message || e), 'error')));
+			R.addHotkey('copyLink', () => copyLink().catch(fail));
 			R.onCommand('buildLink', () => buildShareLink());
 			R.onCommand('copyLink', () => copyLink());
 			R.onCommand('screenshot', () => screenshot());
 			R.onCommand('recordClip', () => startClip());
-			R.onCommand('exportSettings', () => exportSettings());
-			R.ui.addTab({id: 'export', icon: '📤', title: t('r.tab.export'), order: 40, render: renderTab});
+			R.ui.addMenuItem({id: 'blpCopyURL', order: 10, icon: 'fas fa-link', label: () => t('r.menuCopyLink'), onClick: () => copyLink().catch(fail)});
+			R.ui.addMenuItem({id: 'blpScreenshot', order: 20, icon: 'fas fa-camera', label: () => t('r.menuScreenshot'), onClick: () => screenshot().catch(fail)});
+			R.ui.addMenuItem({
+				id: 'blpClip',
+				order: 30,
+				icon: 'fas fa-video',
+				label: () => (clip.rec ? t('r.menuClipStop') : t('r.menuClip', {s: R.settings.export.clip.seconds})),
+				onClick: startClip,
+			});
+			R.ui.addSettingsSection({id: 'export', order: 80, title: () => t('r.sect.export'), render: renderExport});
 			applyLinkConfig();
 		},
 		tock() {
