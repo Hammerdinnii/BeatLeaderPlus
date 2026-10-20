@@ -1,18 +1,19 @@
 /*
- * BeatLeaderPlus – replay visuals (PAGE world).
+ * BeatLeaderPlus – visual additions (PAGE world).
  *
- *   - saber colors (through the replayer's own `colorChanged` event so trails, handles and glow
- *     follow), independent note colors (beat-generator colors), bomb / chain / arc colors
- *   - trail color, length, thickness (vertex shader patch) and opacity
- *   - saber styles: thin, thick, neon, particle, custom GLTF/GLB/OBJ models
- *   - environment colors (official color settings + `colors.updateColors()`)
- *   - miss / bad-cut / bomb flashes, 3D mistake markers, slow-motion bursts, hit particles
- *   - visibility switches implemented with THREE layers (object.layers.mask = 0) so the
- *     replayer's own `visible` logic and object pools are never disturbed
- *   - accuracy heat: notes are tinted with the cut score they receive in this replay
+ * Only what the replayer doesn't already offer. Saber colors, light / wall / bomb / background
+ * colors, saber width, trail type and length, lasers / floor / lights and headset opacity all stay
+ * in the replayer's own Settings menu; these additions build on them:
  *
- * Changes to the official settings object are kept in memory only: settings.sync() is wrapped so
- * BLP overrides are never written into the replayer's own localStorage settings.
+ *   - note colors independent of saber colors (beat-generator colors), chain and arc colors
+ *   - trail color, thickness (vertex shader patch) and brightness on top of the official trail
+ *   - saber glow intensity and styles: neon, particle, custom GLTF/GLB/OBJ model
+ *   - miss / bad-cut / bomb flashes, 3D mistake markers, hit particles
+ *   - show / hide sabers, trails, notes, bombs, walls, arcs and chains (THREE layers, so the
+ *     replayer's own visibility logic and object pools are never touched)
+ *   - accuracy heat: notes tinted with the cut score they receive in this replay
+ *
+ * Controls live in Settings → BL+ (sections "Notes", "Sabers & trails", "Effects", "Show").
  */
 (function () {
 	'use strict';
@@ -25,17 +26,9 @@
 	let ctx = null;
 	let THREE = null;
 	const OFFICIAL_SABER = {left: '#bf2121', right: '#335aff'};
-	const STAGE = {
-		lasers: ['#leftStageLasers', '#rightStageLasers', '[beams]'],
-		lighting: ['#lightFixture', '#stageadditiveobj', '#glowContainer'],
-		floor: ['#floor'],
-		environment: ['#stageObj', '#twister', '#audioColumns', '#substage', '#smoke'],
-	};
 
 	const st = {
-		applied: {left: null, right: null},
 		noteOverridden: false,
-		official: {}, // key -> original value of official settings we overrode
 		trailTouched: false,
 		models: {left: {url: '', el: null, objUrl: null}, right: {url: '', el: null, objUrl: null}},
 		hiddenKeys: new Set(),
@@ -64,81 +57,16 @@
 
 	const brighten = hex => U.mixColors(hex, '#ffffff', 0.35);
 
-	/* ------------------------------------------------------------------ official settings overrides */
-
-	function officialSettings() {
-		const os = ctx.officialSettings();
-		return os && os.settings ? os : null;
-	}
-
-	function setOfficial(key, value) {
-		const os = officialSettings();
-		if (!os) return;
-		if (!(key in st.official)) st.official[key] = os.settings[key];
-		os.settings[key] = value;
-	}
-
-	function restoreOfficial(keys) {
-		const os = officialSettings();
-		if (!os) return;
-		for (const key of keys) {
-			if (key in st.official) {
-				os.settings[key] = st.official[key];
-				delete st.official[key];
-			}
-		}
-	}
-
-	function wrapOfficialSync() {
-		const os = officialSettings();
-		if (!os || os.__blpSyncWrapped) return;
-		const orig = os.sync;
-		os.sync = function (...args) {
-			const swapped = {};
-			for (const key of Object.keys(st.official)) {
-				swapped[key] = os.settings[key];
-				os.settings[key] = st.official[key];
-			}
-			try {
-				return orig.apply(this, args);
-			} finally {
-				for (const key of Object.keys(swapped)) os.settings[key] = swapped[key];
-			}
-		};
-		os.__blpSyncWrapped = true;
-	}
-
 	/* ------------------------------------------------------------------ colors */
 
-	function officialSaberColor(hand) {
+	/** The saber color currently set in the replayer's Colors tab. */
+	function saberColor(hand) {
 		const el = document.getElementById(hand + 'SaberColor');
 		return el && U.isHexColor(el.value) ? el.value : OFFICIAL_SABER[hand];
 	}
-
-	function saberColor(hand) {
-		const s = vis().sabers;
-		return R.active() && s.override ? s[hand + 'Color'] : officialSaberColor(hand);
-	}
 	R.saberColor = saberColor;
 
-	function applySaberColors(force) {
-		const s = vis().sabers;
-		const on = R.active() && s.override;
-		for (const hand of ['left', 'right']) {
-			if (on) {
-				const desired = s[hand + 'Color'];
-				if (force || st.applied[hand] !== desired) {
-					st.applied[hand] = desired;
-					ctx.scene.emit('colorChanged', {hand, color: desired}, null);
-				}
-			} else if (st.applied[hand]) {
-				st.applied[hand] = null;
-				ctx.scene.emit('colorChanged', {hand, color: officialSaberColor(hand)}, null);
-			}
-		}
-		applyNoteColors();
-	}
-
+	/** Notes normally follow the saber colors; the override sets beat-generator's colors directly. */
 	function applyNoteColors() {
 		const bg = ctx.beatGenerator();
 		if (!bg || !bg.colors) return;
@@ -151,52 +79,6 @@
 			bg.colors.left = saberColor('left');
 			bg.colors.right = saberColor('right');
 			st.noteOverridden = false;
-		}
-	}
-
-	function applyBombColor() {
-		const n = vis().notes;
-		const mats = ctx.materials();
-		if (R.active() && n.bombOverride) {
-			setOfficial('bombColor', n.bomb);
-			if (mats) ['mineMaterialred', 'mineMaterialblue'].forEach(k => mats[k] && mats[k].color && mats[k].color.set(n.bomb));
-		} else if ('bombColor' in st.official) {
-			const original = st.official.bombColor;
-			restoreOfficial(['bombColor']);
-			if (mats) ['mineMaterialred', 'mineMaterialblue'].forEach(k => mats[k] && mats[k].color && original && mats[k].color.set(original));
-		}
-	}
-
-	const ENV_KEYS = ['redEventColor', 'redBrightEventColor', 'blueEventColor', 'blueBrightEventColor', 'redBGColor', 'redBrightBGColor', 'blueBGColor', 'blueBrightBGColor', 'wallColor', 'backgroundColor'];
-
-	function applyEnvironment() {
-		const env = vis().environment;
-		const colorsComp = ctx.colors();
-		const on = R.active() && env.override;
-		if (on) {
-			const values = {
-				redEventColor: env.lightLeft,
-				redBrightEventColor: brighten(env.lightLeft),
-				blueEventColor: env.lightRight,
-				blueBrightEventColor: brighten(env.lightRight),
-				redBGColor: env.backglow,
-				redBrightBGColor: brighten(env.backglow),
-				blueBGColor: env.backglow,
-				blueBrightBGColor: brighten(env.backglow),
-				wallColor: env.walls,
-				backgroundColor: env.background,
-			};
-			const os = officialSettings();
-			const changed = os && ENV_KEYS.some(k => os.settings[k] !== values[k]);
-			if (!changed) return;
-			for (const k of ENV_KEYS) setOfficial(k, values[k]);
-		} else if (ENV_KEYS.some(k => k in st.official)) {
-			restoreOfficial(ENV_KEYS);
-		} else return;
-		try {
-			if (colorsComp && colorsComp.updateColors) colorsComp.updateColors();
-		} catch (e) {
-			R.log.debug('updateColors failed', e);
 		}
 	}
 
@@ -237,17 +119,15 @@
 		mat.needsUpdate = true;
 	}
 
+	/** Color, thickness and brightness on top of the official trail (type and length stay official). */
 	function updateTrails() {
 		const s = vis().sabers;
 		const on = R.active() && s.trailOverride;
-		const os = officialSettings();
+		if (!on && !st.trailTouched) return;
 		for (const [hand, el] of Object.entries(sabers())) {
 			const trail = el && el.components.trail;
 			if (!trail || !trail.material) continue;
 			if (on) {
-				st.trailTouched = true;
-				const life = Math.round(Number(s.trailLength) || 0);
-				if (trail.data.lifetime !== life && trail.data.trailType !== 'none') el.setAttribute('trail', 'lifetime', Math.max(1, life));
 				patchTrailShader(trail.material, U.clamp((Number(s.trailWidth) || 90) / 100, 0.05, 1));
 				const c = color(s.trailMatchSaber ? saberColor(hand) : s[hand + 'TrailColor']);
 				const o = Math.max(0, (Number(s.trailOpacity) || 0) / 100);
@@ -256,11 +136,8 @@
 					u.value = {x: c.r * o, y: c.g * o, z: c.b * o, w: Math.min(1, o)};
 					trail.material.uniformsNeedUpdate = true;
 				}
-				if (life === 0 && trail.mesh) trail.mesh.visible = false;
-			} else if (st.trailTouched) {
+			} else {
 				unpatchTrailShader(trail.material);
-				const official = os ? Number(os.settings.trailLength) || 20 : 20;
-				if (trail.data.lifetime !== official) el.setAttribute('trail', 'lifetime', official);
 				try {
 					trail.updateColor();
 				} catch (e) {
@@ -268,33 +145,28 @@
 				}
 			}
 		}
-		if (!on) st.trailTouched = false;
+		st.trailTouched = on;
 	}
 
 	/* ------------------------------------------------------------------ saber styles & models */
 
-	const STYLE_THICKNESS = {thin: 0.45, thick: 1.9, neon: 0.85, particle: 0.6};
-
 	function setMaterialProp(el, prop, value) {
 		if (!el || !el.components.material) return;
-		const cur = el.components.material.data[prop];
-		if (cur !== value) el.setAttribute('material', prop, value);
+		if (el.components.material.data[prop] !== value) el.setAttribute('material', prop, value);
 	}
 
 	function applySaberStyle() {
 		const s = vis().sabers;
 		const on = R.active();
 		const style = on ? s.style : 'default';
-		const thick = on ? ((Number(s.thickness) || 100) / 100) * (STYLE_THICKNESS[style] || 1) : 1;
 		const glow = on ? ((Number(s.glowIntensity) || 0) / 100) * (style === 'neon' ? 4 : 1) : 1;
 		for (const [hand, el] of Object.entries(sabers())) {
 			if (!el) continue;
-			const container = el.querySelector('.saberContainer');
-			if (container && container.object3D) container.object3D.scale.set(thick, 1, thick);
 			setMaterialProp(el.querySelector('.saberglow'), 'opacity', U.round(U.clamp(0.08 * glow, 0, 1), 3));
 			const bladeColor = style === 'neon' ? brighten(saberColor(hand)) : '#ffffff';
 			const blade = el.querySelector('.blade');
-			if (blade && blade.components.material && String(blade.components.material.data.color).toLowerCase() !== bladeColor) blade.setAttribute('material', 'color', bladeColor);
+			const cur = blade && blade.components.material ? String(blade.components.material.data.color).toLowerCase() : null;
+			if (cur && cur !== bladeColor && !(bladeColor === '#ffffff' && cur === '#fff')) blade.setAttribute('material', 'color', bladeColor);
 		}
 		updateCustomModels();
 	}
@@ -310,7 +182,7 @@
 		});
 	}
 
-	async function updateCustomModels() {
+	function updateCustomModels() {
 		const s = vis().sabers;
 		const want = R.active() && s.style === 'custom';
 		for (const [hand, el] of Object.entries(sabers())) {
@@ -322,7 +194,7 @@
 				if (slot.objUrl) URL.revokeObjectURL(slot.objUrl);
 				Object.assign(slot, {url, el: null, objUrl: null, loaded: false});
 				setDefaultSaberVisible(el, true);
-				if (url) loadModel(hand, el, slot, url).catch(e => R.ui && R.ui.toast(String(e.message || e), 'error'));
+				if (url) loadModel(el, slot, url).catch(e => R.ui && R.ui.toast(String(e.message || e), 'error'));
 			}
 			if (slot.el) {
 				const m = s.customModel;
@@ -333,7 +205,7 @@
 		}
 	}
 
-	async function loadModel(hand, saberEl, slot, url) {
+	async function loadModel(saberEl, slot, url) {
 		let src = url;
 		let name = url;
 		if (url.startsWith('stored:')) {
@@ -399,13 +271,11 @@
 		ctx.scene.object3D.add(points);
 		const live = [];
 		return {
-			points,
 			spawn(x, y, z, vx, vy, vz, c, life) {
 				if (live.length >= max) live.shift();
 				live.push({x, y, z, vx, vy, vz, r: c.r, g: c.g, b: c.b, life, max: life});
 			},
 			update(dt) {
-				let n = 0;
 				for (let i = live.length - 1; i >= 0; i--) {
 					const p = live[i];
 					p.life -= dt;
@@ -420,6 +290,7 @@
 					p.y += p.vy * dt;
 					p.z += p.vz * dt;
 				}
+				let n = 0;
 				for (const p of live) {
 					const f = p.life / p.max;
 					positions[n * 3] = p.x;
@@ -450,8 +321,7 @@
 	}
 
 	function saberParticles(dt) {
-		const s = vis().sabers;
-		if (!(R.active() && s.style === 'particle') || !R.api.isPlaying()) return;
+		if (!(R.active() && vis().sabers.style === 'particle') || !R.api.isPlaying()) return;
 		const per = Math.max(1, Math.round(5 * dt * 60));
 		for (const [hand, el] of Object.entries(sabers())) {
 			if (!el || !el.object3D.visible) continue;
@@ -459,10 +329,16 @@
 			const c = color(brighten(saberColor(hand)));
 			for (let i = 0; i < per; i++) {
 				const u = Math.random();
-				const x = st.v1.x + (st.v2.x - st.v1.x) * u;
-				const y = st.v1.y + (st.v2.y - st.v1.y) * u;
-				const z = st.v1.z + (st.v2.z - st.v1.z) * u;
-				st.particles.spawn(x, y, z, (Math.random() - 0.5) * 0.4, (Math.random() - 0.2) * 0.4, (Math.random() - 0.5) * 0.4, c, 0.25 + Math.random() * 0.2);
+				st.particles.spawn(
+					st.v1.x + (st.v2.x - st.v1.x) * u,
+					st.v1.y + (st.v2.y - st.v1.y) * u,
+					st.v1.z + (st.v2.z - st.v1.z) * u,
+					(Math.random() - 0.5) * 0.4,
+					(Math.random() - 0.2) * 0.4,
+					(Math.random() - 0.5) * 0.4,
+					c,
+					0.25 + Math.random() * 0.2
+				);
 			}
 		}
 	}
@@ -482,8 +358,7 @@
 		const fx = vis().effects;
 		const heat = vis().accuracyHeat;
 		const note = evt.note;
-		const pos = R.api.cutPointToScene(note, st.v1);
-		if (!pos) {
+		if (!R.api.cutPointToScene(note, st.v1)) {
 			const el = evt.hand === 1 ? ctx.rightSaber : ctx.leftSaber;
 			if (!el) return;
 			bladePoints(el, st.v2, st.v1);
@@ -496,7 +371,8 @@
 		else hex = brighten(saberColor(evt.hand === 1 ? 'right' : 'left'));
 		const c = color(hex);
 		const count = Math.round(14 * U.clamp((Number(fx.particleIntensity) || 100) / 100, 0.1, 4));
-		const dir = note.cutInfo && note.cutInfo.saberDir ? st.v2.set(note.cutInfo.saberDir.x, note.cutInfo.saberDir.y, -note.cutInfo.saberDir.z).normalize() : st.v2.set(0, 0, 0);
+		const d = note.cutInfo && note.cutInfo.saberDir;
+		const dir = d ? st.v2.set(d.x, d.y, -d.z).normalize() : st.v2.set(0, 0, 0);
 		for (let i = 0; i < count; i++) {
 			st.particles.spawn(
 				st.v1.x,
@@ -542,15 +418,15 @@
 	}
 
 	function spawnMarker(note, hex) {
-		const style = vis().effects.markerStyle;
-		if (!style || style === 'none') return;
+		const fx = vis().effects;
+		if (!fx.markerStyle || fx.markerStyle === 'none') return;
 		const pos = notePosition(note, new THREE.Vector3());
 		pos.z = Math.min(pos.z, -0.4);
 		const mat = new THREE.MeshBasicMaterial({color: color(hex), transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide});
 		const group = new THREE.Group();
-		if (style === 'ring') {
+		if (fx.markerStyle === 'ring') {
 			group.add(new THREE.Mesh(new THREE.RingGeometry(0.17, 0.23, 40), mat));
-		} else if (style === 'cross') {
+		} else if (fx.markerStyle === 'cross') {
 			const a = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.02), mat);
 			const b = a.clone();
 			a.rotation.z = Math.PI / 4;
@@ -564,7 +440,8 @@
 		group.position.copy(pos);
 		group.renderOrder = 7;
 		ctx.scene.object3D.add(group);
-		st.markers.push({group, mat, life: Number(vis().effects.markerLifetime) || 1.5, max: Number(vis().effects.markerLifetime) || 1.5});
+		const life = Number(fx.markerLifetime) || 1.5;
+		st.markers.push({group, mat, life, max: life});
 	}
 
 	function updateMarkers(dt) {
@@ -591,15 +468,10 @@
 			if (fx.hitParticles || (vis().accuracyHeat.enabled && vis().accuracyHeat.target !== 'notes')) hitBurst(evt);
 			return;
 		}
-		let hex = null;
-		if (kind === 'miss' && fx.missFlash) hex = fx.missColor;
-		else if (kind === 'bad' && fx.badCutFlash) hex = fx.badCutColor;
-		else if (kind === 'bomb' && fx.bombFlash) hex = fx.bombColor;
-		if (hex) flash(hex);
-		if (kind === 'miss' || kind === 'bad' || kind === 'bomb') {
-			spawnMarker(evt.note, kind === 'miss' ? fx.missColor : kind === 'bad' ? fx.badCutColor : fx.bombColor);
-			if (fx.slowMoBurst && R.playback) R.playback.burst(Number(fx.slowMoSpeed) || 0.3, Number(fx.slowMoDuration) || 0.6);
-		}
+		const colorFor = {miss: fx.missColor, bad: fx.badCutColor, bomb: fx.bombColor}[kind];
+		if (!colorFor) return;
+		if ((kind === 'miss' && fx.missFlash) || (kind === 'bad' && fx.badCutFlash) || (kind === 'bomb' && fx.bombFlash)) flash(colorFor);
+		spawnMarker(evt.note, colorFor);
 	}
 
 	/* ------------------------------------------------------------------ visibility (layers) */
@@ -624,11 +496,6 @@
 		else st.hiddenKeys.delete(key);
 	}
 
-	const obj3d = sel => {
-		const el = ctx.scene.querySelector(sel);
-		return el && el.object3D;
-	};
-
 	function beatCategory(el) {
 		const c = el.components;
 		if (!c) return null;
@@ -648,16 +515,12 @@
 		const on = R.active();
 		const hide = key => on && v[key] === false;
 		const s = sabers();
-		const trailL = ctx.scene.object3DMap && ctx.scene.object3DMap.trail__left;
-		const trailR = ctx.scene.object3DMap && ctx.scene.object3DMap.trail__right;
+		const map = ctx.scene.object3DMap || {};
 
-		hideKey('headset', [ctx.headset && ctx.headset.object3D], hide('headset') || (on && R.cameraWantsHeadsetHidden && R.cameraWantsHeadsetHidden()));
 		hideKey('leftSaber', [s.left && s.left.object3D], hide('leftSaber'));
 		hideKey('rightSaber', [s.right && s.right.object3D], hide('rightSaber'));
-		hideKey('trailLeft', [trailL], hide('trails') || hide('leftSaber'));
-		hideKey('trailRight', [trailR], hide('trails') || hide('rightSaber'));
-		for (const key of Object.keys(STAGE)) hideKey(key, STAGE[key].map(obj3d), hide(key));
-		hideKey('hud3d', [obj3d('#scoreContainer')], hide('hud3d') || (on && R.get('overlay.hideOfficial.scoreHud')));
+		hideKey('trailLeft', [map.trail__left], hide('trails') || hide('leftSaber'));
+		hideKey('trailRight', [map.trail__right], hide('trails') || hide('rightSaber'));
 
 		const beatTypes = ['notes', 'bombs', 'chains', 'walls', 'arcs'].filter(hide);
 		const container = ctx.beatContainer;
@@ -698,12 +561,11 @@
 			let hex = null;
 			if (heatOn && beat.replayNote && beat.replayNote.score !== undefined) hex = heatColor(beat.replayNote.score);
 			else if (chainOn && isChain) hex = n.chain;
-			const key = hex ? hex + '|' : '';
 			if (hex) {
-				if (child.__blpTintNote !== beat.replayNote || child.__blpTintKey !== key) {
+				if (child.__blpTintNote !== beat.replayNote || child.__blpTintKey !== hex) {
 					if (tintBeat(beat, hex)) {
 						child.__blpTintNote = beat.replayNote;
-						child.__blpTintKey = key;
+						child.__blpTintKey = hex;
 					}
 				}
 			} else if (child.__blpTintKey) {
@@ -716,65 +578,66 @@
 		st.chainTinted = chainOn;
 	}
 
-	/* ------------------------------------------------------------------ panel tab */
+	/* ------------------------------------------------------------------ Settings → BL+ sections */
 
-	function renderTab(body) {
+	const set = (path, value) => R.setPath('visuals.' + path, value);
+
+	function renderNotes(body) {
 		const ui = R.ui;
-		const v = vis();
-		const set = (path, value) => R.setPath('visuals.' + path, value);
+		const n = vis().notes;
+		body.appendChild(ui.toggle(t('f.visuals.notes.override'), n.override, x => set('notes.override', x)));
+		if (n.override) body.appendChild(ui.row(ui.color(t('common.left'), n.left, x => set('notes.left', x)), ui.color(t('common.right'), n.right, x => set('notes.right', x))));
+		body.appendChild(ui.toggle(t('f.visuals.notes.chainOverride'), n.chainOverride, x => set('notes.chainOverride', x)));
+		if (n.chainOverride) body.appendChild(ui.color(t('f.visuals.notes.chain'), n.chain, x => set('notes.chain', x)));
+		body.appendChild(ui.toggle(t('f.visuals.notes.arcOverride'), n.arcOverride, x => set('notes.arcOverride', x)));
+		if (n.arcOverride) body.appendChild(ui.color(t('f.visuals.notes.arc'), n.arc, x => set('notes.arc', x)));
+		body.appendChild(ui.toggle(t('f.visuals.accuracyHeat.enabled'), vis().accuracyHeat.enabled, x => set('accuracyHeat.enabled', x), t('d.visuals.accuracyHeat.enabled')));
+	}
 
+	function renderSabers(body) {
+		const ui = R.ui;
+		const s = vis().sabers;
 		body.appendChild(
-			ui.section(
-				t('h.visSabers'),
-				ui.toggle(t('f.visuals.sabers.override'), v.sabers.override, x => set('sabers.override', x)),
-				ui.row(ui.color(t('common.left'), v.sabers.leftColor, x => set('sabers.leftColor', x)), ui.color(t('common.right'), v.sabers.rightColor, x => set('sabers.rightColor', x))),
-				ui.select(
-					t('f.visuals.sabers.style'),
-					['default', 'thin', 'thick', 'neon', 'particle', 'custom'].map(s => ({value: s, label: t('saber.style.' + s)})),
-					v.sabers.style,
-					x => set('sabers.style', x)
-				),
-				ui.slider(t('f.visuals.sabers.glowIntensity'), {min: 0, max: 600, step: 10, value: v.sabers.glowIntensity, unit: '%'}, x => set('sabers.glowIntensity', x)),
-				ui.slider(t('f.visuals.sabers.thickness'), {min: 20, max: 300, step: 5, value: v.sabers.thickness, unit: '%'}, x => set('sabers.thickness', x))
+			ui.select(
+				t('f.visuals.sabers.style'),
+				['default', 'neon', 'particle', 'custom'].map(v => ({value: v, label: t('saber.style.' + v)})),
+				s.style,
+				x => set('sabers.style', x)
 			)
 		);
+		body.appendChild(ui.range(t('f.visuals.sabers.glowIntensity'), {min: 0, max: 600, step: 10, value: s.glowIntensity, unit: '%'}, x => set('sabers.glowIntensity', x)));
+		body.appendChild(ui.toggle(t('f.visuals.sabers.trailOverride'), s.trailOverride, x => set('sabers.trailOverride', x)));
+		if (s.trailOverride) {
+			body.appendChild(ui.toggle(t('f.visuals.sabers.trailMatchSaber'), s.trailMatchSaber, x => set('sabers.trailMatchSaber', x)));
+			if (!s.trailMatchSaber) body.appendChild(ui.row(ui.color(t('common.left'), s.leftTrailColor, x => set('sabers.leftTrailColor', x)), ui.color(t('common.right'), s.rightTrailColor, x => set('sabers.rightTrailColor', x))));
+			body.appendChild(ui.range(t('f.visuals.sabers.trailWidth'), {min: 10, max: 100, step: 1, value: s.trailWidth, unit: '%'}, x => set('sabers.trailWidth', x)));
+			body.appendChild(ui.range(t('f.visuals.sabers.trailOpacity'), {min: 0, max: 200, step: 5, value: s.trailOpacity, unit: '%'}, x => set('sabers.trailOpacity', x)));
+		}
+	}
+
+	function renderEffects(body) {
+		const ui = R.ui;
+		const fx = vis().effects;
+		body.appendChild(ui.toggle(t('f.visuals.effects.missFlash'), fx.missFlash, x => set('effects.missFlash', x)));
+		body.appendChild(ui.toggle(t('f.visuals.effects.badCutFlash'), fx.badCutFlash, x => set('effects.badCutFlash', x)));
+		body.appendChild(ui.toggle(t('f.visuals.effects.bombFlash'), fx.bombFlash, x => set('effects.bombFlash', x)));
 		body.appendChild(
-			ui.section(
-				t('h.visTrails'),
-				ui.toggle(t('f.visuals.sabers.trailOverride'), v.sabers.trailOverride, x => set('sabers.trailOverride', x)),
-				ui.slider(t('f.visuals.sabers.trailLength'), {min: 0, max: 120, step: 1, value: v.sabers.trailLength}, x => set('sabers.trailLength', x)),
-				ui.slider(t('f.visuals.sabers.trailWidth'), {min: 10, max: 100, step: 1, value: v.sabers.trailWidth, unit: '%'}, x => set('sabers.trailWidth', x)),
-				ui.slider(t('f.visuals.sabers.trailOpacity'), {min: 0, max: 200, step: 5, value: v.sabers.trailOpacity, unit: '%'}, x => set('sabers.trailOpacity', x))
+			ui.select(
+				t('f.visuals.effects.markerStyle'),
+				['none', 'ring', 'cross', 'pillar'].map(v => ({value: v, label: t('marker.' + v)})),
+				fx.markerStyle,
+				x => set('effects.markerStyle', x)
 			)
 		);
-		body.appendChild(
-			ui.section(
-				t('h.visNotes'),
-				ui.toggle(t('f.visuals.notes.override'), v.notes.override, x => set('notes.override', x)),
-				ui.row(ui.color(t('common.left'), v.notes.left, x => set('notes.left', x)), ui.color(t('common.right'), v.notes.right, x => set('notes.right', x))),
-				ui.toggle(t('f.visuals.accuracyHeat.enabled'), v.accuracyHeat.enabled, x => set('accuracyHeat.enabled', x)),
-				ui.toggle(t('f.visuals.effects.hitParticles'), v.effects.hitParticles, x => set('effects.hitParticles', x))
-			)
-		);
-		body.appendChild(
-			ui.section(
-				t('h.visEffects'),
-				ui.toggle(t('f.visuals.effects.missFlash'), v.effects.missFlash, x => set('effects.missFlash', x)),
-				ui.toggle(t('f.visuals.effects.badCutFlash'), v.effects.badCutFlash, x => set('effects.badCutFlash', x)),
-				ui.toggle(t('f.visuals.effects.slowMoBurst'), v.effects.slowMoBurst, x => set('effects.slowMoBurst', x)),
-				ui.select(
-					t('f.visuals.effects.markerStyle'),
-					['none', 'ring', 'cross', 'pillar'].map(s => ({value: s, label: t('marker.' + s)})),
-					v.effects.markerStyle,
-					x => set('effects.markerStyle', x)
-				)
-			)
-		);
-		const visSection = ui.section(t('h.visVisibility'));
+		body.appendChild(ui.toggle(t('f.visuals.effects.hitParticles'), fx.hitParticles, x => set('effects.hitParticles', x)));
+	}
+
+	function renderVisibility(body) {
+		const ui = R.ui;
+		const v = vis().visibility;
 		const grid = ui.h('div', {class: 'blp-r-grid'});
-		for (const key of Object.keys(v.visibility)) grid.appendChild(ui.toggle(t('f.visuals.visibility.' + key), v.visibility[key], x => set('visibility.' + key, x)));
-		visSection.appendChild(grid);
-		body.appendChild(visSection);
+		for (const key of Object.keys(v)) grid.appendChild(ui.toggle(t('f.visuals.visibility.' + key), v[key], x => set('visibility.' + key, x)));
+		body.appendChild(grid);
 	}
 
 	/* ------------------------------------------------------------------ module */
@@ -787,31 +650,22 @@
 			st.v1 = new THREE.Vector3();
 			st.v2 = new THREE.Vector3();
 			st.particles = createParticles(1500);
-			wrapOfficialSync();
 			R.on('note', onNote);
-			// Re-assert our colors whenever the replayer changes them (e.g. supporter colors fetched).
-			const reassert = () => setTimeout(() => R.active() && applySaberColors(false), 0);
-			c.scene.addEventListener('colorReset', reassert);
-			c.scene.addEventListener('colorsFetched', reassert);
-			c.scene.addEventListener('colorChanged', e => {
-				const s = vis().sabers;
-				if (R.active() && s.override && e.detail && e.detail.color !== s[e.detail.hand + 'Color']) {
-					st.applied[e.detail.hand] = null;
-					reassert();
-				} else setTimeout(applyNoteColors, 0);
-			});
+			// Saber color changes in the replayer reset beat-generator's colors; re-apply ours after.
+			['colorChanged', 'colorReset', 'colorsFetched'].forEach(ev => c.scene.addEventListener(ev, () => setTimeout(applyNoteColors, 0)));
 			R.addHotkey('toggleHeat', () => {
 				const on = !vis().accuracyHeat.enabled;
 				R.setPath('visuals.accuracyHeat.enabled', on);
 				R.api.notify(t(on ? 'r.heatOn' : 'r.heatOff'), 'fas fa-fire');
 			});
-			R.ui.addTab({id: 'visuals', icon: '✨', title: t('r.tab.visuals'), order: 30, render: renderTab});
+			R.ui.addSettingsSection({id: 'notes', order: 10, title: () => t('r.sect.notes'), render: renderNotes});
+			R.ui.addSettingsSection({id: 'sabers', order: 20, title: () => t('r.sect.sabers'), render: renderSabers});
+			R.ui.addSettingsSection({id: 'effects', order: 30, title: () => t('r.sect.effects'), render: renderEffects});
+			R.ui.addSettingsSection({id: 'visibility', order: 40, title: () => t('r.sect.visibility'), render: renderVisibility});
 		},
 		onSettings() {
 			if (!ctx) return;
-			applySaberColors(false);
-			applyBombColor();
-			applyEnvironment();
+			applyNoteColors();
 			applySaberStyle();
 			if (!R.active()) {
 				// Ticks stop while disabled, so restore everything right away.
@@ -824,7 +678,7 @@
 			}
 		},
 		onReplay() {
-			applySaberColors(true);
+			applyNoteColors();
 			st.particles.clear();
 		},
 		tick(frame) {
@@ -838,7 +692,6 @@
 		},
 		maintain() {
 			applyNoteColors();
-			applyBombColor();
 			applySaberStyle();
 		},
 	});

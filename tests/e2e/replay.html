@@ -5,10 +5,66 @@
 		<script src="/vendor/aframe-master.js"></script>
 		<script src="/vendor/mock-replayer.js"></script>
 		<style>
-			body { margin: 0; background: #000; }
-			#controls { position: fixed; left: 0; right: 0; bottom: 0; height: 60px; background: #222; color: #fff; z-index: 10; }
+			/* Condensed from the replayer's index.styl so additions can be judged in screenshots. */
+			body { margin: 0; background: #000; font-family: system-ui, sans-serif; color: #fafafa; }
+			#controls { position: fixed; left: 0; right: 0; bottom: 0; height: 60px; background: #222; color: #fff; z-index: 10; font-size: 13px; }
 			#timeline { position: absolute; left: 10px; right: 10px; top: 10px; height: 8px; background: #555; }
+			#settingsContainer, #cameraSettingsContainer { background: rgba(0, 0, 0, 0.85); border-radius: 5px; bottom: 60px; display: none; right: 0; position: absolute; z-index: 999999999; overflow: hidden; }
+			#settingsContainer { width: 360px; }
+			#settingsContainer input { cursor: pointer; padding: 0; width: 100px; border-radius: 0; }
+			#cameraSettingsContainer { width: 330px; text-align: center; }
+			#cameraSettingsContainer input { cursor: pointer; padding: 0; width: 90%; }
+			#cameraSettingsContainer .settingHeader { color: #bdbdbd; margin-bottom: 5px; }
+			#cameraSettingsContainer .toggleButton { text-align: left; }
+			#controls #settingsContainer.settingsActive { display: block; }
+			#controls #cameraSettingsContainer.settingsActive { display: grid; grid-template-columns: 1fr 1fr; }
+			#cameraPositionContainer, #cameraSaveContainer { align-items: center; justify-items: center; flex-wrap: wrap; justify-content: center; display: flex; grid-gap: 0.5em; margin: 10px 0; width: 10em; }
+			.tab-container { display: flex; }
+			.tab-buttons { width: 95px; display: flex; flex-direction: column; background-color: rgba(13, 13, 13, 0.4); }
+			.tab-button { padding: 10px; border: none; color: white; background-color: transparent; cursor: pointer; width: 100px; }
+			.tab-button.active { background-color: rgba(142, 84, 233, 0.7); }
+			.tab-content { flex-grow: 1; padding: 8px; }
+			.camera-tab-pane { width: 10em; }
+			.tab-pane { display: none; }
+			.tab-pane.active { display: block; }
+			.settingButton { border: none; border-radius: 4px; color: white; padding: 4px; cursor: pointer; background-color: #3f3f3f; }
+			.switch { position: relative; display: inline-block; width: 32px; height: 17px; margin-left: 4px; margin-right: 2px; }
+			.switch input { opacity: 0; width: 0; height: 0; }
+			.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3f3f3f; transition: 0.1s; }
+			.slider:before { position: absolute; content: ''; height: 13px; width: 15px; left: 2px; bottom: 2px; background-color: #6e6e6e; transition: 0.1s; }
+			input:checked + .slider { background-color: #2f712d; }
+			input:checked + .slider:before { transform: translateX(13px); background-color: #5ddd59; }
+			.slider.round, .slider.round:before { border-radius: 4px; }
+			.toggleButtonLabel { top: -2px; position: relative; display: inline-block; width: 30px; height: 17px; color: #fafafa; font-size: 11px; }
+			.toggleButtonContainer { height: 0.9em; }
+			input[type='range'].settingRange { display: inline-block; height: 24px; margin: 0 0 0 0.3em; }
+			#ctxMenu { display: none; position: absolute; overflow: hidden; border-radius: 6px; background: rgba(28, 28, 28, 0.9); z-index: 9999; font-size: 0.8em; }
+			.panel-menu { padding: 4px 0; display: table; width: 100%; color: #eee; box-sizing: border-box; }
+			.menuitem { display: table-row; cursor: default; outline: none; height: 20px; }
+			.menuitem:hover { background: rgba(102, 102, 102, 0.9); }
+			.menuitem-icon { display: table-cell; vertical-align: middle; padding: 0 5px; }
+			.menuitem-content { text-align: right; display: table-cell; vertical-align: middle; padding: 0 10px; }
+			.menuitem-label { font-weight: 500; display: table-cell; vertical-align: middle; padding: 0 10px; }
 		</style>
+		<script>
+			// The replayer's own tab helpers (templates/settings.html, templates/cameraSettings.html).
+			function changeTab(index) {
+				const buttons = Array.from(document.getElementsByClassName('settings-tab-button'));
+				const panes = Array.from(document.getElementsByClassName('settings-tab-pane'));
+				buttons.forEach((b, i) => {
+					b.classList.toggle('active', i === index);
+					panes[i].classList.toggle('active', i === index);
+				});
+			}
+			function changeCameraTab(index) {
+				const buttons = Array.from(document.getElementsByClassName('camera-tab-button'));
+				const panes = Array.from(document.getElementsByClassName('camera-tab-pane'));
+				buttons.forEach((b, i) => {
+					b.classList.toggle('active', i === index);
+					panes[i].classList.toggle('active', i === index);
+				});
+			}
+		</script>
 	</head>
 	<body id="body" class="showControls">
 		<div id="controls">
@@ -18,6 +74,44 @@
 				<div class="controlsSettings desktopControl">set</div>
 				<button class="povswitch">pov</button>
 			</div>
+			<div id="settingsContainer">
+				<div class="tab-container">
+					<div class="tab-buttons">
+						<button class="settings-tab-button tab-button active" onclick="changeTab(0)">Main</button>
+						<button class="settings-tab-button tab-button" onclick="changeTab(1)">Colors</button>
+						<button class="settings-tab-button tab-button" id="extensionsTab" style="display: none" onclick="changeTab(2)">Mods</button>
+					</div>
+					<div class="tab-content">
+						<div class="settings-tab-pane tab-pane active">
+							<div class="toggleButton">
+								<label class="switch"><input type="checkbox" id="showHud" checked /><span class="slider round"></span></label>
+								<label class="toggleButtonLabel"><nobr>Show HUD</nobr></label>
+							</div>
+						</div>
+						<div class="settings-tab-pane tab-pane">colors</div>
+						<div class="settings-tab-pane tab-pane">mods</div>
+					</div>
+				</div>
+			</div>
+			<div id="cameraSettingsContainer">
+				<div class="tab-container">
+					<div class="tab-buttons">
+						<button class="camera-tab-button tab-button active" onclick="changeCameraTab(0)">Main</button>
+						<button class="camera-tab-button tab-button" onclick="changeCameraTab(1)">FPV</button>
+					</div>
+					<div class="tab-content">
+						<div class="camera-tab-pane tab-pane active">
+							<div class="settingHeader">Main camera</div>
+							<div id="cameraPositionContainer">
+								<button id="cameraToLeft" class="settingButton">&lt; left</button>
+								<button id="cameraToCenter" class="settingButton">center</button>
+								<button id="cameraToRight" class="settingButton">right &gt;</button>
+							</div>
+						</div>
+						<div class="camera-tab-pane tab-pane">fpv</div>
+					</div>
+				</div>
+			</div>
 			<input class="speedSlider" type="range" min="0" max="2" step="0.01" value="1" />
 			<span class="songSpeedPercent">1x</span>
 			<input id="jd" type="range" min="5" max="50" step="0.1" value="18" />
@@ -26,8 +120,18 @@
 			<input id="hitsoundSlider" type="range" min="0" max="1" step="0.01" value="0.3" />
 		</div>
 		<div id="songInfoOverlay">Song info</div>
+		<div id="ctxMenu">
+			<div class="panel-menu" role="menu" style="height: 40px">
+				<div id="copyURL" class="menuitem" role="menuitemcheckbox" tabindex="0"><div class="menuitem-icon"></div><div class="menuitem-label">Copy URL</div><div class="menuitem-content"></div></div>
+				<div id="copyURLcamera" class="menuitem" role="menuitemcheckbox" tabindex="0"><div class="menuitem-icon"></div><div class="menuitem-label">Copy URL with time, speed, JD and camera</div><div class="menuitem-content"></div></div>
+				<div id="addToPlaylist" class="menuitem" role="menuitem" tabindex="0" style="display: none"><div class="menuitem-icon"></div><div class="menuitem-label">Add to playlist</div><div class="menuitem-content"></div></div>
+			</div>
+		</div>
 		<canvas id="main-canvas"></canvas>
 		<a-scene settings song song-controls replay-loader replay-player camera-mover beat-generator colors hotkey-notification playlist beat-hit-sound vr-mode-ui="enabled: false">
+			<a-assets>
+				<a-mixin id="scoreText" text="color: #FFF; letterSpacing: -2; align: center"></a-mixin>
+			</a-assets>
 			<a-entity id="beatContainer">
 				<a-entity beat="type: arrow; color: red" data-idx="0" position="-0.3 1 -3"><a-entity class="block" geometry="primitive: box; width: 0.4; height: 0.4; depth: 0.4" material="color: #bf2121"></a-entity></a-entity>
 				<a-entity beat="type: arrow; color: blue" data-idx="1" position="0.3 1 -4"><a-entity class="block" geometry="primitive: box; width: 0.4; height: 0.4; depth: 0.4" material="color: #335aff"></a-entity></a-entity>
@@ -65,7 +169,7 @@
 				<a-entity id="floor" geometry="primitive: plane; width: 6; height: 30" rotation="-90 0 0" material="color: #111"></a-entity>
 				<a-entity id="leftStageLasers" geometry="primitive: box; width: 0.05; height: 6; depth: 0.05" position="-3 2 -10" material="color: #2064a8"></a-entity>
 			</a-entity>
-			<a-entity id="scoreContainer" position="0 2.5 -3"><a-entity geometry="primitive: plane; width: 1; height: 0.3" material="color: #333"></a-entity></a-entity>
+			<a-entity id="scoreContainer"><a-entity id="accuracy" mixin="scoreText" text="value: 0" position="-1.8 0.3 -4" scale="5 5 5"></a-entity></a-entity>
 			<a-sky color="#050510"></a-sky>
 		</a-scene>
 	</body>

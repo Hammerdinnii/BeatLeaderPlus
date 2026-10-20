@@ -5,7 +5,7 @@
  * page's own JavaScript world it can talk to A-Frame directly (window.AFRAME, <a-scene>
  * components such as `song`, `song-controls`, `replay-loader`, `camera-mover`, …).
  *
- * The core provides everything the feature modules (camera, visuals, playback, overlays, audio,
+ * The core provides everything the feature modules (camera, visuals, playback, hud, audio,
  * export) share:
  *   BLPR.settings / BLPR.runtime     current effective settings and persisted runtime values
  *   BLPR.request(type, payload)      request/response messaging with the content-script bridge
@@ -679,7 +679,7 @@
 			version: R.version,
 			replay: R.replayInfo ? {title: R.replayInfo.title, key: R.replayInfo.key} : null,
 			camera: R.cameraStatus ? R.cameraStatus() : null,
-			hud: R.get('overlay.enabled'),
+			overlaysHidden: !!R.overlaysHidden,
 		}));
 
 		R.request('status', {ready: true}).catch(() => {});

@@ -3,9 +3,9 @@
  *
  * Shows (configurable in options → Popup):
  *   - master on/off switch
- *   - replay actions for the active tab (copy link with settings, screenshot, clip, panel,
- *     camera mode / preset) – sent to the tab's content script, which forwards them to the
- *     replay page runtime
+ *   - replay actions for the active tab (copy link with settings, screenshot, clip, open the
+ *     BL+ tab of the replayer's Settings menu, camera mode / preset) – sent to the tab's content
+ *     script, which forwards them to the replay page runtime
  *   - user-selected quick toggles (any boolean setting from lib/schema.js)
  *   - new scores from followed players and the favorites list
  */
