@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Mock Song | BeatLeader</title>
+		<style>
+			:root { --background: #222; --foreground: #252525; --textColor: #eee; --beatleader-primary: #eb008c; }
+			body { background: var(--background); color: var(--textColor); font-family: sans-serif; }
+			.player-score { display: flex; gap: 10px; padding: 8px; border-bottom: 1px solid #444; }
+		</style>
+	</head>
+	<body>
+		<nav class="ssr-page-container"><a href="/u/999">My profile</a></nav>
+		<main>
+			<div class="leaderboard">
+				<div class="player-score">
+					<div class="rank with-badge"><span class="badge" style="--color:white; --background-color:darkgoldenrod; ">#1</span></div>
+					<a href="/u/111">Alice</a>
+					<span class="clan-badges"><a href="/clan/BSFR"><span class="label">BSFR</span></a></span>
+					<span>98.50%</span><span>FC</span>
+					<a class="button" href="https://replay.beatleader.com/?scoreId=1001">Replay</a>
+				</div>
+				<div class="player-score">
+					<div class="rank with-badge"><span class="badge" style="--color:white; --background-color:#888; ">#2</span></div>
+					<a href="/u/222">Bob</a>
+					<span>93.20%</span>
+					<a class="button" href="https://replay.beatleader.com/?scoreId=1002">Replay</a>
+				</div>
+				<div class="player-score">
+					<div class="rank with-badge"><span class="badge" style="--color:white; --background-color:saddlebrown; ">#3</span></div>
+					<a href="/u/999">Me</a>
+					<span>96.00%</span>
+					<a class="button" href="https://replay.beatleader.com/?link=https://cdn.replays.beatleader.xyz/1003.bsor">Replay</a>
+				</div>
+			</div>
+			<a href="/leaderboard/global/abc123/1">Some other map</a>
+			<nav class="pagination"><ul class="pagination-list"><li><button class="pagination-link" onclick="window.__page=(window.__page||1)-1"><i class="fas fa-chevron-left"></i></button></li><li><button class="pagination-link" onclick="window.__page=(window.__page||1)+1"><i class="fas fa-chevron-right"></i></button></li></ul></nav>
+		</main>
+		<footer><a href="https://twitter.com/beatleader_">Twitter</a></footer>
+	</body>
+</html>
