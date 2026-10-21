@@ -784,23 +784,23 @@ function watch(page, label) {
 	watch(site, 'site');
 	await site.goto('https://beatleader.com/leaderboard/global/xyz789/1');
 	await site.waitForSelector('.blp-actions', {timeout: 10000});
-	const starsOff = await site.evaluate(() => ({
-		stars: document.querySelectorAll('.blp-star').length,
+	const dockClosed = await site.evaluate(() => ({
 		dock: Array.from(document.querySelectorAll('#blp-dock > *')).map(e => e.className),
 		dockText: document.getElementById('blp-dock').textContent,
 	}));
-	check('favorite stars next to links are off by default', starsOff.stars === 0, starsOff);
-	check('dock starts collapsed to the BL+ button', starsOff.dock.length === 1 && starsOff.dock[0] === 'blp-dock-brand' && starsOff.dockText === 'BL+', starsOff);
-	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {favoriteStars: true}}));
-	await site.waitForSelector('.player-score .blp-star', {timeout: 10000}).catch(() => null);
+	check('dock starts collapsed to the BL+ button', dockClosed.dock.length === 1 && dockClosed.dock[0] === 'blp-dock-brand' && dockClosed.dockText === 'BL+', dockClosed);
 	await site.click('#blp-dock .blp-dock-brand');
-	const dockOpen = await site.evaluate(() => ({open: document.getElementById('blp-dock').classList.contains('blp-dock-open'), items: document.querySelectorAll('#blp-dock > *').length}));
-	check('clicking BL+ opens the dock', dockOpen.open && dockOpen.items === 3, dockOpen);
+	const dockOpen = await site.evaluate(() => ({
+		open: document.getElementById('blp-dock').classList.contains('blp-dock-open'),
+		items: document.querySelectorAll('#blp-dock > *').length,
+		text: document.getElementById('blp-dock').textContent,
+	}));
+	check('clicking BL+ opens the dock (filters only on a leaderboard)', dockOpen.open && dockOpen.items === 2, dockOpen);
+	// Favorites were removed: BeatLeader's own follow button and playlists cover them.
+	check('no favorites: no stars, dock button or filter', (await site.evaluate(() => document.querySelectorAll('.blp-star').length)) === 0 && !/favorite/i.test(dockOpen.text), dockOpen.text);
 	const siteInfo = await site.evaluate(() => ({
 		actions: document.querySelectorAll('.blp-actions').length,
 		dl: document.querySelectorAll('.blp-dl').length,
-		stars: document.querySelectorAll('.blp-star').length,
-		navStars: document.querySelectorAll('nav .blp-star').length,
 		dock: !!document.getElementById('blp-dock'),
 		themed: !!document.getElementById('blp-theme-style'),
 		bg: getComputedStyle(document.body).backgroundColor,
@@ -818,7 +818,6 @@ function watch(page, label) {
 		return {ours, wrapped: !!main.querySelector('.blp-actions'), cells: main.querySelectorAll(':scope > span > *').length};
 	});
 	check('BL+ buttons fit the site icon grid as separate cells', !grid.wrapped && grid.ours.length === 2 && grid.ours.every(b => b.w === 22 && b.h === 22 && b.inside && b.hit), grid);
-	check('favorite stars on player & map links once enabled (not in nav)', siteInfo.stars >= 4 && siteInfo.navStars === 0, siteInfo);
 	check('dock shown on leaderboard', siteInfo.dock);
 	check('OLED theme applied to site', siteInfo.themed && siteInfo.bg === 'rgb(0, 0, 0)', siteInfo.bg);
 	check('rank #1 color re-mapped', siteInfo.rank1 === '#ffc400', siteInfo.rank1);
@@ -855,34 +854,6 @@ function watch(page, label) {
 	check('double-click puts the dock back along the bottom', !dockReset.vertical && dockReset.edge === 'bottom' && dockReset.bottom < 30 && dockReset.open === dockBefore.open, dockReset);
 	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {dockSize: 100}}));
 	await sleep(400);
-	await site.click('.player-score .blp-star');
-	await sleep(600);
-	const favs = await sw.evaluate(() => chrome.storage.local.get('blp_favorites'));
-	const alice = favs.blp_favorites && favs.blp_favorites.players['111'];
-	check('favorite saved under the player ID with the API name', alice && alice.name === 'Alice Real' && alice.alias === 'alice-cool', favs.blp_favorites && favs.blp_favorites.players);
-	// The same player through her profile alias shows as already favorited.
-	check('alias links show the same favorite', await site.evaluate(() => document.querySelector('.other-players a[href="/u/alice-cool"] + .blp-star').classList.contains('blp-star-on')));
-	// Links to a player's score pages (/u/<id>/scores/1?…) get a star too.
-	await site.click('.other-players a[href^="/u/333/"] + .blp-star');
-	await sleep(600);
-	// The site reuses link elements when lists change: the star must follow the link, not the
-	// player who was there when it was added.
-	await site.evaluate(() => {
-		const a = document.querySelector('.player-score:nth-child(2) a[href="/u/222"]');
-		a.setAttribute('href', '/u/444');
-		a.textContent = 'Dave';
-	});
-	await sleep(400);
-	await site.click('.player-score:nth-child(2) a[href="/u/444"] + .blp-star');
-	await sleep(600);
-	const favs2 = (await sw.evaluate(() => chrome.storage.local.get('blp_favorites'))).blp_favorites.players;
-	check('score-page player links can be favorited', favs2['333'] && favs2['333'].name === 'Carol Real', Object.keys(favs2));
-	check('a reused link favorites the player it shows now', favs2['444'] && favs2['444'].name === 'Dave Real' && !favs2['222'], Object.keys(favs2));
-	await site.evaluate(() => {
-		const a = document.querySelector('.player-score:nth-child(2) a[href="/u/444"]');
-		a.setAttribute('href', '/u/222');
-		a.textContent = 'Bob';
-	});
 	await site.click('#blp-dock >> text=Full combo');
 	await sleep(300);
 	const hidden = await site.evaluate(() => document.querySelectorAll('.player-score.blp-filtered-out').length);

@@ -7,7 +7,7 @@
  *     BL+ tab of the replayer's Settings menu, camera mode / preset) – sent to the tab's content
  *     script, which forwards them to the replay page runtime
  *   - user-selected quick toggles (any boolean setting from lib/schema.js)
- *   - new scores from followed players and the favorites list
+ *   - new scores from followed players
  */
 (function () {
 	'use strict';
@@ -19,7 +19,6 @@
 
 	let settings = null;
 	let activeTab = null;
-	let favTab = 'players';
 
 	/* ------------------------------------------------------------------ helpers */
 
@@ -202,31 +201,6 @@
 		}
 	}
 
-	async function renderFavorites() {
-		const section = $('favSection');
-		if (!settings.popup.showFavorites || !settings.site.favorites) return section.classList.add('hidden');
-		section.classList.remove('hidden');
-		const fav = await storage.getLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES);
-		const list = $('favList');
-		list.textContent = '';
-		const entries = Object.values(favTab === 'players' ? fav.players || {} : fav.maps || {}).sort((a, b) => (b.added || 0) - (a.added || 0));
-		if (!entries.length) {
-			list.appendChild(h('p', {class: 'empty'}, t('popup.noFavorites')));
-			return;
-		}
-		for (const f of entries.slice(0, 30)) {
-			const url = favTab === 'players' ? 'https://beatleader.com/u/' + encodeURIComponent(f.id) : 'https://beatleader.com' + (f.url || '/leaderboard/global/' + encodeURIComponent(f.id));
-			list.appendChild(
-				h(
-					'a',
-					{class: 'item', href: url, target: '_blank', title: f.note || f.name},
-					favTab === 'players' ? h('img', {src: f.avatar || 'icons/icon48.png', alt: ''}) : null,
-					h('div', {class: 'meta'}, h('span', null, f.name), f.note ? h('span', {class: 'muted'}, f.note) : null)
-				)
-			);
-		}
-	}
-
 	/* ------------------------------------------------------------------ init */
 
 	async function init() {
@@ -263,17 +237,8 @@
 			}
 			renderFollows();
 		});
-		document.querySelectorAll('#favSection .tab').forEach(btn =>
-			btn.addEventListener('click', () => {
-				favTab = btn.dataset.tab;
-				document.querySelectorAll('#favSection .tab').forEach(b => b.classList.toggle('active', b === btn));
-				renderFavorites();
-			})
-		);
-
 		renderToggles();
 		renderFollows();
-		renderFavorites();
 
 		[activeTab] = await chrome.tabs.query({active: true, currentWindow: true});
 		let pageInfo = null;
