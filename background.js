@@ -211,39 +211,70 @@ async function pollFollowed({manual = false} = {}) {
 	return {checked: ids.length, found: found.length};
 }
 
+/**
+ * The player behind an ID or a profile alias. BeatLeader profile links use either
+ * (/u/<id> or /u/<alias>); the API resolves both and returns the real ID.
+ */
+async function resolvePlayer(key) {
+	const k = String(key || '').trim();
+	if (!k) throw new Error('Missing player id');
+	const info = await fetchJson(`${U.API_BASE}/player/${encodeURIComponent(k)}`);
+	if (!info || info.id === undefined || info.id === null || info.id === '') throw new Error('Player not found: ' + k);
+	return {id: String(info.id), name: info.name || '', avatar: info.avatar || '', alias: info.alias || ''};
+}
+
 async function followPlayer({playerId, name, avatar}) {
 	if (!playerId) throw new Error('Missing player id');
-	const state = await getFollowState();
-	state.players = state.players || {};
-	state.players[playerId] = Object.assign({id: playerId, name: name || playerId, avatar: avatar || '', since: Date.now()}, state.players[playerId] || {});
-	if (name) state.players[playerId].name = name;
+	let info = null;
 	try {
-		// Prefer the canonical name/avatar from the API over whatever the page showed.
-		const info = await fetchJson(`${U.API_BASE}/player/${encodeURIComponent(playerId)}`);
-		if (info && info.name) state.players[playerId].name = info.name;
-		if (info && info.avatar) state.players[playerId].avatar = info.avatar;
+		info = await resolvePlayer(playerId);
 	} catch (e) {
 		log.debug('player info unavailable', e && e.message);
 	}
+	const id = info ? info.id : String(playerId);
+	const state = await getFollowState();
+	state.players = state.players || {};
+	// Follows used to be stored under whatever the page link said, which can be an alias.
+	if (id !== String(playerId) && state.players[playerId]) {
+		state.players[id] = Object.assign({}, state.players[playerId], state.players[id] || {}, {id});
+		delete state.players[playerId];
+	}
+	state.players[id] = Object.assign({id, name: name || id, avatar: avatar || '', since: Date.now()}, state.players[id] || {});
+	if (name) state.players[id].name = name;
+	// Prefer the canonical name/avatar from the API over whatever the page showed.
+	if (info && info.name) state.players[id].name = info.name;
+	if (info && info.avatar) state.players[id].avatar = info.avatar;
+	if (info && info.alias) state.players[id].alias = info.alias;
 	try {
-		const scores = await fetchLatestScores(playerId);
+		const scores = await fetchLatestScores(id);
 		if (scores.length) {
-			state.players[playerId].lastScoreId = scores[0].id;
-			state.players[playerId].lastTime = Number(scores[0].timepost || scores[0].timeset) || 0;
-			if (!name && scores[0].player && scores[0].player.name) state.players[playerId].name = scores[0].player.name;
+			state.players[id].lastScoreId = scores[0].id;
+			state.players[id].lastTime = Number(scores[0].timepost || scores[0].timeset) || 0;
+			if (!name && scores[0].player && scores[0].player.name) state.players[id].name = scores[0].player.name;
 		}
 	} catch (e) {
 		log.warn('could not prime follow state', e && e.message);
 	}
 	await storage.setLocal(D.KEYS.follow, state);
 	await scheduleFollowAlarm();
-	return state.players[playerId];
+	return state.players[id];
 }
 
 async function unfollowPlayer({playerId}) {
+	const key = String(playerId);
+	let id = key;
+	try {
+		id = (await resolvePlayer(key)).id;
+	} catch (e) {
+		/* unknown alias: remove what matches the key */
+	}
 	const state = await getFollowState();
-	if (state.players) delete state.players[playerId];
-	state.newScores = (state.newScores || []).filter(s => String(s.playerId) !== String(playerId));
+	const players = state.players || {};
+	for (const k of Object.keys(players)) {
+		const p = players[k];
+		if (k === key || k === id || (p.alias && p.alias.toLowerCase() === key.toLowerCase())) delete players[k];
+	}
+	state.newScores = (state.newScores || []).filter(s => String(s.playerId) !== id && String(s.playerId) !== key);
 	await storage.setLocal(D.KEYS.follow, state);
 	await scheduleFollowAlarm();
 	await updateBadge();
@@ -331,6 +362,9 @@ const handlers = {
 	},
 	async resolveScore(msg) {
 		return fetchScore(msg.scoreId);
+	},
+	async resolvePlayer(msg) {
+		return resolvePlayer(msg.player);
 	},
 	async downloadReplay(msg) {
 		return downloadReplay(msg);

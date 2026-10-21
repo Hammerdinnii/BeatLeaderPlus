@@ -111,7 +111,7 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 ### Website enhancements
 
 - **Download .bsor**, **Open in Enhanced Replayer** and **compare** buttons next to every replay link. In BeatLeader's score icon grid they appear as extra icons in the same style, and the download icon is left out when the site already shows its own. Replay links also get a right-click menu.
-- **Favorite players and maps** (☆ next to links), with notes, listed in the popup and the options page.
+- **Favorite players and maps** (☆ next to links), with notes, listed in the popup and the options page. Players are looked up on BeatLeader when you click the star and saved under their player ID with their current name, so profile aliases (`/u/<alias>`) and links the site reuses while you browse always favorite the right person.
 - **Followed players**: background polling for new scores, a toolbar badge counter and optional desktop notifications.
 - **Score comparison**: pick two scores (⚖) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.
 - **Auto-expand score details**.
