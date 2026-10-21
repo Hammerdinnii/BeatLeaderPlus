@@ -153,6 +153,55 @@ function buildReplay(info, map, hash) {
 	return {buffer: w.buffer(), missTimes, firstNote: notes[0].time, duration};
 }
 
+/* ------------------------------------------------------------------ saber model (.glb) */
+
+/** A small glTF 2.0 binary saber: a dark grip at the origin and a pink blade along +Y. */
+function buildSaberGlb() {
+	const boxes = [
+		{min: [-0.025, 0, -0.025], max: [0.025, 0.22, 0.025], color: [0.15, 0.15, 0.18, 1]},
+		{min: [-0.015, 0.22, -0.015], max: [0.015, 1.22, 0.015], color: [1, 0.2, 0.6, 1]},
+	];
+	const faces = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+	const chunks = [];
+	const json = {asset: {version: '2.0'}, scene: 0, scenes: [{nodes: [0]}], nodes: [{mesh: 0}], meshes: [{primitives: []}], materials: [], buffers: [], bufferViews: [], accessors: []};
+	let offset = 0;
+	const view = (buf, target) => {
+		const padded = Buffer.concat([buf, Buffer.alloc((4 - (buf.length % 4)) % 4)]);
+		chunks.push(padded);
+		json.bufferViews.push({buffer: 0, byteOffset: offset, byteLength: buf.length, target});
+		offset += padded.length;
+		return json.bufferViews.length - 1;
+	};
+	boxes.forEach((b, i) => {
+		const [x0, y0, z0] = b.min;
+		const [x1, y1, z1] = b.max;
+		const corners = [x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1];
+		const pos = Buffer.alloc(corners.length * 4);
+		corners.forEach((v, k) => pos.writeFloatLE(v, k * 4));
+		const idx = Buffer.alloc(faces.length * 2);
+		faces.forEach((v, k) => idx.writeUInt16LE(v, k * 2));
+		json.accessors.push({bufferView: view(pos, 34962), componentType: 5126, count: 8, type: 'VEC3', min: b.min, max: b.max});
+		json.accessors.push({bufferView: view(idx, 34963), componentType: 5123, count: faces.length, type: 'SCALAR'});
+		json.materials.push({pbrMetallicRoughness: {baseColorFactor: b.color, metallicFactor: 0, roughnessFactor: 1}});
+		json.meshes[0].primitives.push({attributes: {POSITION: i * 2}, indices: i * 2 + 1, material: i});
+	});
+	const bin = Buffer.concat(chunks);
+	json.buffers.push({byteLength: bin.length});
+	let jsonBuf = Buffer.from(JSON.stringify(json));
+	jsonBuf = Buffer.concat([jsonBuf, Buffer.alloc((4 - (jsonBuf.length % 4)) % 4, 0x20)]);
+	const header = Buffer.alloc(12);
+	header.writeUInt32LE(0x46546c67, 0); // "glTF"
+	header.writeUInt32LE(2, 4);
+	header.writeUInt32LE(12 + 8 + jsonBuf.length + 8 + bin.length, 8);
+	const chunk = (type, data) => {
+		const h = Buffer.alloc(8);
+		h.writeUInt32LE(data.length, 0);
+		h.writeUInt32LE(type, 4);
+		return Buffer.concat([h, data]);
+	};
+	return Buffer.concat([header, chunk(0x4e4f534a, jsonBuf), chunk(0x004e4942, bin)]);
+}
+
 /* ------------------------------------------------------------------ fixture set */
 
 /**
@@ -201,7 +250,8 @@ async function load(replayerDir) {
 		metadata: {songName: info._songName, songSubName: info._songSubName, songAuthorName: info._songAuthorName, levelAuthorName: info._levelAuthorName, bpm: info._beatsPerMinute},
 		versions: [{hash: hash.toLowerCase(), downloadURL: zipUrl, coverURL: '', previewURL: ''}],
 	};
-	return {hash, replay, replayUrl, mapZip, zipUrl, score, player, beatSaverMap, missTimes, firstNote, scoreId: SCORE_ID, songName: info._songName, difficulty: DIFFICULTY};
+	const saberGlb = buildSaberGlb();
+	return {hash, replay, replayUrl, mapZip, zipUrl, score, player, beatSaverMap, missTimes, firstNote, saberGlb, scoreId: SCORE_ID, songName: info._songName, difficulty: DIFFICULTY};
 }
 
 module.exports = {load};

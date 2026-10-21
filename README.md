@@ -69,7 +69,8 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 
 - **Note colors** independent of the saber colors, plus **chain** and **arc** overrides.
 - **Trails**: color (follow the saber or custom), width (how much of the blade the trail covers) and brightness, layered on the official trail.
-- **Glow intensity** and **saber styles**: neon, particle, or a **custom GLTF/GLB/OBJ model** (from a URL or uploaded in options). Saber colors always come from the replayer's own color pickers.
+- **Glow intensity** and **saber styles**: neon, particle, or a **custom saber model**. Saber colors always come from the replayer's own color pickers.
+- **Custom saber models**: choose "Custom model" in Settings → BL+ and drop a `.glb`, self-contained `.gltf` or `.obj` file on the drop zone (or click it to pick one), for both sabers or one hand. The model is saved, shown spinning in the drop zone and put on the sabers right away. It is fitted to the blade automatically (longest side along the blade, grip at the hilt) and drawn with flat shading like the replayer's sabers. Scale, rotation, saber-color tint and hiding the default blade are adjustable, and saved models can be reused or managed on the options page. Beat Saber `.saber` files are Unity asset bundles that a browser can't read; export them to `.glb` first (for example with AssetRipper).
 - **Mistake effects**: screen flashes for misses, bad cuts and bombs, 3D markers (ring, cross or pillar) and hit particles (saber color, custom, or colored by accuracy).
 - **Show or hide** each saber, the trails, notes, bombs, walls, arcs and chains. This uses three.js layers, so the replayer's object pools are left alone.
 - **Accuracy heat** (`Alt+Shift+A`): tints each note with the cut score it receives in this replay (115 / 110+ / 105+ / 100+ / lower / mistake).
@@ -107,7 +108,7 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 
 ### Website enhancements
 
-- **Download .bsor** and **Open in Enhanced Replayer** buttons next to every replay link. Replay links also get a right-click menu.
+- **Download .bsor**, **Open in Enhanced Replayer** and **compare** buttons next to every replay link. In BeatLeader's score icon grid they appear as extra icons in the same style, and the download icon is left out when the site already shows its own. Replay links also get a right-click menu.
 - **Favorite players and maps** (☆ next to links), with notes, listed in the popup and the options page.
 - **Followed players**: background polling for new scores, a toolbar badge counter and optional desktop notifications.
 - **Score comparison**: pick two scores (⚖) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.

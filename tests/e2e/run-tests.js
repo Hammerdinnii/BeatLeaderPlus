@@ -330,6 +330,83 @@ function watch(page, label) {
 	check('visibility restored', await page.evaluate(() => BLPR.ctx.leftSaber.object3D.layers.mask === 1));
 	await page.evaluate(() => BLPR.patchSettings({visuals: {accuracyHeat: {enabled: false}}}));
 
+	// Custom saber model: drop a file on Settings → BL+ → Sabers & trails
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {style: 'custom'}}}));
+	await page.keyboard.press('Backquote');
+	await page.waitForSelector('#blp-sec-sabers .blp-r-drop', {timeout: 10000});
+	const dropFile = (b64, name) =>
+		page.evaluate(
+			([b64, name]) => {
+				const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+				const dt = new DataTransfer();
+				dt.items.add(new File([bytes], name));
+				const zone = document.querySelector('#blp-sec-sabers .blp-r-drop');
+				for (const type of ['dragenter', 'dragover', 'drop']) zone.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt}));
+			},
+			[b64, name]
+		);
+	await page.evaluate(() => document.body.addEventListener('drop', () => (window.__bodyDrop = true)));
+	await dropFile(Buffer.from('UnityFS').toString('base64'), 'cool.saber');
+	await page.waitForSelector('#blp-sec-sabers .blp-r-drop-error', {timeout: 10000});
+	const saberMsg = await page.evaluate(() => document.querySelector('#blp-sec-sabers .blp-r-drop-error .blp-r-hint').textContent);
+	check('.saber files get an explanation instead of failing silently', /Unity/.test(saberMsg), saberMsg);
+	await dropFile(fx.saberGlb.toString('base64'), 'test-saber.glb');
+	const modelsLoaded = () =>
+		['leftSaber', 'rightSaber'].every(k => {
+			const ent = BLPR.ctx[k].querySelector('.blp-saber-model');
+			return ent && ent.getObject3D('mesh') && !BLPR.ctx[k].querySelector('.bladeContainer').object3D.visible;
+		});
+	await page.waitForFunction(modelsLoaded, null, {timeout: 30000}).catch(() => null);
+	const model = await page.evaluate(() => {
+		const out = {};
+		for (const k of ['leftSaber', 'rightSaber']) {
+			const ent = BLPR.ctx[k].querySelector('.blp-saber-model');
+			const mesh = ent && ent.getObject3D('mesh');
+			if (!mesh) continue;
+			const container = BLPR.ctx[k].querySelector('.saberContainer').object3D;
+			container.updateMatrixWorld(true);
+			const inv = new THREE.Matrix4();
+			if (inv.invert) inv.copy(container.matrixWorld).invert();
+			else inv.getInverse(container.matrixWorld);
+			const box = new THREE.Box3();
+			mesh.traverse(o => {
+				if (!o.geometry) return;
+				o.geometry.computeBoundingBox();
+				box.union(o.geometry.boundingBox.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)));
+			});
+			out[k] = {tip: Math.round(box.min.y * 100) / 100, end: Math.round(box.max.y * 1000) / 1000, defaultBlade: BLPR.ctx[k].querySelector('.bladeContainer').object3D.visible};
+		}
+		return {sabers: out, bodyDrop: !!window.__bodyDrop, status: Array.from(document.querySelectorAll('#blp-sec-sabers .blp-r-row .blp-r-hint')).map(e => e.textContent)};
+	});
+	check('dropped .glb shows on both sabers, default blade hidden', model.sabers.leftSaber && model.sabers.rightSaber && !model.sabers.leftSaber.defaultBlade && !model.sabers.rightSaber.defaultBlade, model);
+	check('model fitted along the blade (tip at -1 m, grip at the hilt)', ['leftSaber', 'rightSaber'].every(k => model.sabers[k] && Math.abs(model.sabers[k].tip + 1) < 0.02 && Math.abs(model.sabers[k].end - 0.155) < 0.01), model.sabers);
+	check("drops never reach the replayer's own drag-and-drop", !model.bodyDrop);
+	check('model status shown in the BL+ tab', model.status.length === 2 && model.status.every(x => /test-saber\.glb ✓/.test(x)), model.status);
+	const stored = await sw.evaluate(() => chrome.storage.local.get('blp_saber_models'));
+	check('dropped model saved like an options-page upload', !!(stored.blp_saber_models && stored.blp_saber_models['test-saber.glb']), Object.keys(stored.blp_saber_models || {}));
+	await page.waitForSelector('#blp-sec-sabers .blp-r-drop canvas.blp-r-model-preview', {timeout: 10000}).catch(() => null);
+	await sleep(1500);
+	const previewPixels = await page.evaluate(() => {
+		const c = document.querySelector('#blp-sec-sabers canvas.blp-r-model-preview');
+		if (!c) return -1;
+		const copy = document.createElement('canvas');
+		copy.width = c.width;
+		copy.height = c.height;
+		const g = copy.getContext('2d');
+		g.drawImage(c, 0, 0);
+		const data = g.getImageData(0, 0, c.width, c.height).data;
+		let n = 0;
+		for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++;
+		return n;
+	});
+	check('spinning preview of the model in the drop zone', previewPixels > 200, previewPixels);
+	await page.click('#blp-sec-sabers .blp-r-row .blp-r-btn >> nth=0');
+	await page.waitForFunction(() => !BLPR.ctx.leftSaber.querySelector('.blp-saber-model'), null, {timeout: 10000}).catch(() => null);
+	const removed = await page.evaluate(() => ({left: !!BLPR.ctx.leftSaber.querySelector('.blp-saber-model'), right: !!BLPR.ctx.rightSaber.querySelector('.blp-saber-model'), leftBlade: BLPR.ctx.leftSaber.querySelector('.bladeContainer').object3D.visible}));
+	check('removing the left model brings back its default blade', !removed.left && removed.right && removed.leftBlade, removed);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {style: 'default', customModel: {left: '', right: ''}}}}));
+	await page.keyboard.press('Backquote');
+
 	// PP line inside the replayer's 3D score HUD
 	await sleep(1500);
 	const hudLine = await page.evaluate(() => {
@@ -498,7 +575,18 @@ function watch(page, label) {
 		bg: getComputedStyle(document.body).backgroundColor,
 		rank1: getComputedStyle(document.querySelector('.badge')).getPropertyValue('--background-color').trim(),
 	}));
-	check('score action buttons injected', siteInfo.actions === 3 && siteInfo.dl === 3, siteInfo);
+	check('score action buttons injected', siteInfo.actions === 2 && siteInfo.dl === 3, siteInfo);
+	// Bob's row uses the site's real icon grid, which forces every item into a 22px cell.
+	const grid = await site.evaluate(() => {
+		const main = document.querySelector('.player-score:nth-child(2) .main-grid');
+		const box = main.getBoundingClientRect();
+		const ours = Array.from(main.querySelectorAll(':scope > span > .blp-site-icon')).map(b => {
+			const r = b.getBoundingClientRect();
+			return {cls: b.className.split(' ').find(c => /^blp-(dl|enh|cmp)$/.test(c)), w: Math.round(r.width), h: Math.round(r.height), inside: r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5, hit: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b};
+		});
+		return {ours, wrapped: !!main.querySelector('.blp-actions'), cells: main.querySelectorAll(':scope > span > *').length};
+	});
+	check('BL+ buttons fit the site icon grid as separate cells', !grid.wrapped && grid.ours.length === 3 && grid.ours.every(b => b.w === 22 && b.h === 22 && b.inside && b.hit), grid);
 	check('favorite stars on player & map links (not in nav)', siteInfo.stars >= 4 && siteInfo.navStars === 0, siteInfo);
 	check('dock shown on leaderboard', siteInfo.dock);
 	check('OLED theme applied to site', siteInfo.themed && siteInfo.bg === 'rgb(0, 0, 0)', siteInfo.bg);

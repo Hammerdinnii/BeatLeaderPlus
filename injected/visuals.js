@@ -30,7 +30,11 @@
 	const st = {
 		noteOverridden: false,
 		trailTouched: false,
-		models: {left: {url: '', el: null, objUrl: null}, right: {url: '', el: null, objUrl: null}},
+		models: {left: {key: '', url: '', el: null, objUrl: null}, right: {key: '', url: '', el: null, objUrl: null}},
+		dropTarget: 'both',
+		dropBusy: false,
+		dropError: '',
+		storedModels: null,
 		hiddenKeys: new Set(),
 		beatsHidden: false,
 		heatTinted: false,
@@ -171,9 +175,21 @@
 		updateCustomModels();
 	}
 
+	/* ------------------------------------------------------------------ custom saber models */
+
+	const MODEL_EXT = /\.(glb|gltf|obj)$/i;
+	const MAX_MODEL_BYTES = 12 * 1024 * 1024;
+	// The replayer's saber, in its .saberContainer: a 1 m blade from the hilt towards -Y and a
+	// 0.155 m handle towards +Y. Auto-fit maps a model onto that.
+	const SABER_LENGTH = 1.155;
+	const HANDLE_END = 0.155;
+	const DEG = Math.PI / 180;
+
 	function modelFormat(name) {
 		return /\.obj(\?|#|$)/i.test(name) ? 'obj' : 'gltf';
 	}
+
+	const modelName = ref => (ref.startsWith('stored:') ? ref.slice(7) : ref.split(/[?#]/)[0].split('/').pop() || ref);
 
 	function setDefaultSaberVisible(el, visible) {
 		['.bladeContainer', '.saberHandle'].forEach(sel => {
@@ -182,51 +198,381 @@
 		});
 	}
 
+	/** Everything a loaded model depends on; when it changes the model is loaded again. */
+	function modelKey(hand, s) {
+		const url = String(s.customModel[hand] || '').trim();
+		if (!url) return '';
+		const m = s.customModel;
+		const colored = m.tint || modelFormat(url) === 'obj';
+		return [url, m.autoFit ? 1 : 0, m.unlit ? 1 : 0, m.tint ? 1 : 0, colored ? saberColor(hand) : ''].join('|');
+	}
+
+	const refreshModelUi = () => R.ui && R.ui.refresh();
+
 	function updateCustomModels() {
 		const s = vis().sabers;
 		const want = R.active() && s.style === 'custom';
 		for (const [hand, el] of Object.entries(sabers())) {
 			if (!el) continue;
 			const slot = st.models[hand];
-			const url = want ? String(s.customModel[hand] || '').trim() : '';
-			if (slot.url !== url) {
-				if (slot.el) slot.el.remove();
+			const key = want ? modelKey(hand, s) : '';
+			if (slot.key !== key) {
+				// A-Frame entities override remove(), so detach through the parent.
+				if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
 				if (slot.objUrl) URL.revokeObjectURL(slot.objUrl);
-				Object.assign(slot, {url, el: null, objUrl: null, loaded: false});
+				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: ''});
 				setDefaultSaberVisible(el, true);
-				if (url) loadModel(el, slot, url).catch(e => R.ui && R.ui.toast(String(e.message || e), 'error'));
+				if (key) loadModel(hand, el, slot, key).catch(e => modelFailed(slot, key, e));
+				refreshModelUi();
 			}
 			if (slot.el) {
 				const m = s.customModel;
 				slot.el.object3D.scale.setScalar(Number(m.scale) || 1);
-				slot.el.object3D.rotation.set((Number(m.rotX) || 0) * (Math.PI / 180), (Number(m.rotY) || 0) * (Math.PI / 180), (Number(m.rotZ) || 0) * (Math.PI / 180));
+				slot.el.object3D.rotation.set((Number(m.rotX) || 0) * DEG, (Number(m.rotY) || 0) * DEG, (Number(m.rotZ) || 0) * DEG);
 				setDefaultSaberVisible(el, !(slot.loaded && m.hideDefault));
 			}
 		}
 	}
 
-	async function loadModel(saberEl, slot, url) {
+	function modelFailed(slot, key, err) {
+		if (slot.key !== key) return;
+		slot.state = 'error';
+		slot.error = String((err && err.message) || err);
+		if (R.ui) R.ui.toast(slot.error, 'error');
+		refreshModelUi();
+	}
+
+	async function loadModel(hand, saberEl, slot, key) {
+		const url = slot.url;
 		let src = url;
-		let name = url;
+		let name = modelName(url);
 		if (url.startsWith('stored:')) {
-			const data = await R.request('getSaberModel', {name: url.slice(7)});
+			const data = await R.request('getSaberModel', {name: url.slice(7)}, 30000);
+			if (slot.key !== key) return;
 			name = data.name;
 			slot.objUrl = URL.createObjectURL(new Blob([data.data], {type: data.mime || 'application/octet-stream'}));
 			src = slot.objUrl;
 		}
-		if (slot.url !== url) return; // settings changed while loading
+		if (slot.key !== key) return; // settings changed while loading
+		const m = vis().sabers.customModel;
 		const container = saberEl.querySelector('.saberContainer') || saberEl;
 		const ent = document.createElement('a-entity');
 		ent.classList.add('blp-saber-model');
-		if (modelFormat(name) === 'obj') ent.setAttribute('obj-model', 'obj: url(' + src + ')');
-		else ent.setAttribute('gltf-model', 'url(' + src + ')');
+		if (modelFormat(name) === 'obj') {
+			// OBJ files carry no colors: use the saber color, flat like the replayer's own blade.
+			ent.setAttribute('material', {shader: 'flat', color: saberColor(hand)});
+			ent.setAttribute('obj-model', 'obj: url(' + src + ')');
+		} else ent.setAttribute('gltf-model', 'url(' + src + ')');
 		ent.addEventListener('model-loaded', () => {
+			if (slot.key !== key) return;
+			const mesh = ent.getObject3D('mesh');
+			if (mesh) prepareModel(mesh, hand, m);
 			slot.loaded = true;
+			slot.state = 'loaded';
 			updateCustomModels();
+			refreshModelUi();
 		});
-		ent.addEventListener('model-error', () => R.ui && R.ui.toast('Saber model failed to load: ' + name, 'error'));
+		ent.addEventListener('model-error', () => modelFailed(slot, key, new Error(t('r.modelFailed', {name}))));
 		container.appendChild(ent);
 		slot.el = ent;
+	}
+
+	function invert(matrix) {
+		const r = new THREE.Matrix4();
+		return typeof r.invert === 'function' ? r.copy(matrix).invert() : r.getInverse(matrix);
+	}
+
+	/** Bounding box of everything under `root`, in root's own coordinates. */
+	function localBounds(root) {
+		root.updateMatrixWorld(true);
+		const toRoot = invert(root.matrixWorld);
+		const box = new THREE.Box3();
+		const part = new THREE.Box3();
+		const m = new THREE.Matrix4();
+		root.traverse(o => {
+			if (!o.geometry) return;
+			if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+			part.copy(o.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(toRoot, o.matrixWorld));
+			box.union(part);
+		});
+		if (box.isEmpty()) return null;
+		const size = box.getSize(new THREE.Vector3());
+		const axis = size.x >= size.y && size.x >= size.z ? 'x' : size.y >= size.z ? 'y' : 'z';
+		return {box, size, center: box.getCenter(new THREE.Vector3()), axis, length: size[axis]};
+	}
+
+	/**
+	 * Scale and turn the model so its longest side runs along the blade. Saber models keep the grip
+	 * at their origin, so the end nearest the origin goes to the hilt.
+	 */
+	function fitModel(mesh) {
+		mesh.position.set(0, 0, 0);
+		mesh.quaternion.set(0, 0, 0, 1);
+		mesh.scale.set(1, 1, 1);
+		const b = localBounds(mesh);
+		if (!b || !(b.length > 0)) return;
+		const sign = b.center[b.axis] < -0.05 * b.length ? -1 : 1;
+		const dir = new THREE.Vector3();
+		dir[b.axis] = sign;
+		const q = new THREE.Quaternion().setFromUnitVectors(dir, new THREE.Vector3(0, -1, 0));
+		const scale = SABER_LENGTH / b.length;
+		const butt = b.center.clone();
+		butt[b.axis] = sign > 0 ? b.box.min[b.axis] : b.box.max[b.axis];
+		mesh.quaternion.copy(q);
+		mesh.scale.setScalar(scale);
+		mesh.position.set(0, HANDLE_END, 0).sub(butt.multiplyScalar(scale).applyQuaternion(q));
+	}
+
+	function prepareModel(mesh, hand, m) {
+		if (m.unlit || m.tint) {
+			const tint = m.tint ? new THREE.Color(saberColor(hand)) : null;
+			const convert = mat => {
+				let base = mat.color ? mat.color.clone() : new THREE.Color(1, 1, 1);
+				let map = mat.map || null;
+				const em = mat.emissive;
+				// Glowing sabers often keep their look in the emissive color over a dark base.
+				if (m.unlit && em && em.r + em.g + em.b > 0.05 && base.r + base.g + base.b < 0.3) {
+					base = em.clone();
+					map = mat.emissiveMap || map;
+				}
+				if (tint) base = tint.clone();
+				if (!m.unlit) {
+					if (mat.color) mat.color.copy(base);
+					return mat;
+				}
+				return new THREE.MeshBasicMaterial({
+					color: base,
+					map,
+					transparent: mat.transparent,
+					opacity: mat.opacity,
+					side: mat.side,
+					alphaTest: mat.alphaTest || 0,
+					vertexColors: mat.vertexColors,
+					skinning: !!mat.skinning,
+				});
+			};
+			mesh.traverse(o => {
+				if (o.isMesh && o.material) o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
+			});
+		}
+		if (m.autoFit) fitModel(mesh);
+	}
+
+	/* ------------------------------------------------------------------ model drop zone & preview */
+
+	async function importModel(file) {
+		const name = file.name || 'model';
+		st.dropError = '';
+		if (/\.saber$/i.test(name)) st.dropError = t('r.modelSaberFile');
+		else if (!MODEL_EXT.test(name)) st.dropError = t('r.modelUnsupported', {name});
+		else if (file.size > MAX_MODEL_BYTES) st.dropError = t('r.modelTooBig', {name});
+		if (st.dropError) return refreshModelUi();
+		st.dropBusy = true;
+		refreshModelUi();
+		try {
+			const res = await R.request('saveSaberModel', {name, data: await file.arrayBuffer()}, 30000);
+			const customModel = {};
+			if (st.dropTarget !== 'right') customModel.left = res.ref;
+			if (st.dropTarget !== 'left') customModel.right = res.ref;
+			st.storedModels = null;
+			await R.patchSettings({visuals: {sabers: {style: 'custom', customModel}}});
+		} catch (e) {
+			st.dropError = String((e && e.message) || e);
+		} finally {
+			st.dropBusy = false;
+			refreshModelUi();
+		}
+	}
+
+	function pickModel() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.glb,.gltf,.obj,.saber';
+		input.addEventListener('change', () => input.files && input.files[0] && importModel(input.files[0]));
+		input.click();
+	}
+
+	function dropZone() {
+		const ui = R.ui;
+		const zone = ui.h(
+			'div',
+			{class: 'blp-r-drop' + (st.dropError ? ' blp-r-drop-error' : ''), tabindex: '0', role: 'button'},
+			ui.h('div', {class: 'blp-r-drop-title'}, st.dropBusy ? t('r.modelSaving') : t('r.modelDrop')),
+			ui.h('div', {class: 'blp-r-hint'}, st.dropError || t('r.modelFormats'))
+		);
+		// Keep drops away from the replayer's own drag-and-drop (it opens dropped replays and maps).
+		const stop = e => {
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		const over = e => {
+			stop(e);
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+			zone.classList.add('blp-r-drop-over');
+		};
+		zone.addEventListener('dragenter', over);
+		zone.addEventListener('dragover', over);
+		zone.addEventListener('dragleave', e => {
+			stop(e);
+			if (!zone.contains(e.relatedTarget)) zone.classList.remove('blp-r-drop-over');
+		});
+		zone.addEventListener('drop', e => {
+			stop(e);
+			zone.classList.remove('blp-r-drop-over');
+			const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+			if (file) importModel(file);
+		});
+		zone.addEventListener('click', pickModel);
+		zone.addEventListener('keydown', e => {
+			if (e.key !== 'Enter' && e.key !== ' ') return;
+			stop(e);
+			pickModel();
+		});
+		const shown = previewSource();
+		if (shown) {
+			zone.appendChild(previewCanvas());
+			setTimeout(startPreview, 0);
+		}
+		return zone;
+	}
+
+	const preview = {canvas: null, renderer: null, scene: null, camera: null, spin: null, source: null, raf: 0};
+	const PREVIEW_W = 220;
+	const PREVIEW_H = 110;
+
+	/** The loaded model shown in the drop zone (right saber first, like most saber previews). */
+	function previewSource() {
+		for (const hand of ['right', 'left']) {
+			const slot = st.models[hand];
+			const mesh = slot.loaded && slot.el && slot.el.getObject3D('mesh');
+			if (mesh) return mesh;
+		}
+		return null;
+	}
+
+	function previewCanvas() {
+		if (!preview.canvas) {
+			const dpr = Math.min(2, window.devicePixelRatio || 1);
+			preview.canvas = document.createElement('canvas');
+			preview.canvas.className = 'blp-r-model-preview';
+			preview.canvas.width = PREVIEW_W * dpr;
+			preview.canvas.height = PREVIEW_H * dpr;
+		}
+		return preview.canvas;
+	}
+
+	/** A copy of the model, laid along X and centered, turning around its own length. */
+	function previewModel(mesh) {
+		const copy = mesh.clone();
+		copy.position.set(0, 0, 0);
+		copy.quaternion.set(0, 0, 0, 1);
+		copy.scale.set(1, 1, 1);
+		const b = localBounds(copy);
+		const outer = new THREE.Group();
+		if (!b || !(b.length > 0)) return outer;
+		const dir = new THREE.Vector3();
+		dir[b.axis] = 1;
+		const inner = new THREE.Group();
+		copy.position.copy(b.center).negate();
+		inner.add(copy);
+		inner.quaternion.setFromUnitVectors(dir, new THREE.Vector3(1, 0, 0));
+		inner.scale.setScalar(1 / b.length);
+		outer.add(inner);
+		return outer;
+	}
+
+	function drawPreview() {
+		if (!preview.renderer) {
+			try {
+				preview.renderer = new THREE.WebGLRenderer({canvas: preview.canvas, alpha: true, antialias: true, preserveDrawingBuffer: true});
+			} catch (e) {
+				return false;
+			}
+			preview.renderer.setPixelRatio(1);
+			preview.renderer.setSize(preview.canvas.width, preview.canvas.height, false);
+			preview.scene = new THREE.Scene();
+			preview.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+			const light = new THREE.DirectionalLight(0xffffff, 0.8);
+			light.position.set(1, 2, 3);
+			preview.scene.add(light);
+			preview.camera = new THREE.PerspectiveCamera(35, PREVIEW_W / PREVIEW_H, 0.01, 20);
+			preview.camera.position.set(0, 0, 1.1);
+		}
+		const mesh = previewSource();
+		if (preview.source !== mesh) {
+			if (preview.spin) preview.scene.remove(preview.spin);
+			preview.spin = mesh ? previewModel(mesh) : null;
+			if (preview.spin) preview.scene.add(preview.spin);
+			preview.source = mesh;
+		}
+		if (preview.spin) preview.spin.rotation.x = (performance.now() / 1000) * 0.9;
+		preview.renderer.render(preview.scene, preview.camera);
+		return true;
+	}
+
+	/** Runs while the drop zone is on screen; the next render of the section restarts it. */
+	function startPreview() {
+		if (preview.raf) return;
+		const loop = () => {
+			preview.raf = 0;
+			const c = preview.canvas;
+			if (!c || !c.isConnected || !c.offsetParent || !drawPreview()) return;
+			preview.raf = requestAnimationFrame(loop);
+		};
+		preview.raf = requestAnimationFrame(loop);
+	}
+
+	async function loadStoredModels() {
+		if (st.storedModels) return;
+		st.storedModels = [];
+		try {
+			st.storedModels = await R.request('listSaberModels', {});
+		} catch (e) {
+			R.log.debug('stored models unavailable', e);
+		}
+		if (st.storedModels.length) refreshModelUi();
+	}
+
+	function renderModelControls(body) {
+		const ui = R.ui;
+		const m = vis().sabers.customModel;
+		const target = v => ({value: v, label: t('r.modelTarget.' + v)});
+		body.appendChild(ui.select(t('r.modelTarget'), ['both', 'left', 'right'].map(target), st.dropTarget, v => (st.dropTarget = v)));
+		body.appendChild(dropZone());
+		for (const hand of ['left', 'right']) {
+			const ref = String(m[hand] || '').trim();
+			if (!ref) continue;
+			const slot = st.models[hand];
+			const status = slot.state === 'loading' ? ' · ' + t('r.modelLoading') : slot.state === 'error' ? ' · ⚠ ' + slot.error : slot.state === 'loaded' ? ' ✓' : '';
+			body.appendChild(
+				ui.row(
+					ui.h('span', {class: 'blp-r-hint blp-r-inline blp-r-grow', title: ref}, t('common.' + hand) + ': ' + modelName(ref) + status),
+					ui.button('✕', () => set('sabers.customModel.' + hand, ''), {title: t('r.modelRemove')})
+				)
+			);
+		}
+		loadStoredModels();
+		if (st.storedModels && st.storedModels.length) {
+			const options = [{value: '', label: t('r.modelChoose')}].concat(st.storedModels.map(x => ({value: 'stored:' + x.name, label: x.name})));
+			body.appendChild(
+				ui.select(t('r.modelStored'), options, '', ref => {
+					if (!ref) return;
+					const customModel = {};
+					if (st.dropTarget !== 'right') customModel.left = ref;
+					if (st.dropTarget !== 'left') customModel.right = ref;
+					R.patchSettings({visuals: {sabers: {customModel}}});
+				})
+			);
+		}
+		const path = k => 'sabers.customModel.' + k;
+		body.appendChild(ui.toggle(t('f.visuals.sabers.customModel.autoFit'), m.autoFit, x => set(path('autoFit'), x), t('d.visuals.sabers.customModel.autoFit')));
+		body.appendChild(ui.toggle(t('f.visuals.sabers.customModel.unlit'), m.unlit, x => set(path('unlit'), x), t('d.visuals.sabers.customModel.unlit')));
+		body.appendChild(ui.toggle(t('f.visuals.sabers.customModel.tint'), m.tint, x => set(path('tint'), x)));
+		body.appendChild(ui.toggle(t('f.visuals.sabers.customModel.hideDefault'), m.hideDefault, x => set(path('hideDefault'), x)));
+		body.appendChild(ui.range(t('f.visuals.sabers.customModel.scale'), {min: 0.05, max: 5, step: 0.05, value: m.scale, unit: '×'}, x => set(path('scale'), x)));
+		for (const axis of ['rotX', 'rotY', 'rotZ']) {
+			body.appendChild(ui.range(t('f.visuals.sabers.customModel.' + axis), {min: -180, max: 180, step: 1, value: m[axis], unit: '°'}, x => set(path(axis), x)));
+		}
 	}
 
 	/* ------------------------------------------------------------------ particles */
@@ -605,6 +951,7 @@
 				x => set('sabers.style', x)
 			)
 		);
+		if (s.style === 'custom') renderModelControls(body);
 		body.appendChild(ui.range(t('f.visuals.sabers.glowIntensity'), {min: 0, max: 600, step: 10, value: s.glowIntensity, unit: '%'}, x => set('sabers.glowIntensity', x)));
 		body.appendChild(ui.toggle(t('f.visuals.sabers.trailOverride'), s.trailOverride, x => set('sabers.trailOverride', x)));
 		if (s.trailOverride) {
