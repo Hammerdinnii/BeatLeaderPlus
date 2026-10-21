@@ -116,6 +116,7 @@
       "resources": [
         "lib/i18n.js",
         "lib/utils.js",
+        "lib/unity-saber.js",
         "injected/*.js",
         "injected-replay.js"
       ],

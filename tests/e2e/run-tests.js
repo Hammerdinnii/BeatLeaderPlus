@@ -346,10 +346,10 @@ function watch(page, label) {
 			[b64, name]
 		);
 	await page.evaluate(() => document.body.addEventListener('drop', () => (window.__bodyDrop = true)));
-	await dropFile(Buffer.from('UnityFS').toString('base64'), 'cool.saber');
+	await dropFile(Buffer.from('hello').toString('base64'), 'readme.txt');
 	await page.waitForSelector('#blp-sec-sabers .blp-r-drop-error', {timeout: 10000});
-	const saberMsg = await page.evaluate(() => document.querySelector('#blp-sec-sabers .blp-r-drop-error .blp-r-hint').textContent);
-	check('.saber files get an explanation instead of failing silently', /Unity/.test(saberMsg), saberMsg);
+	const dropMsg = await page.evaluate(() => document.querySelector('#blp-sec-sabers .blp-r-drop-error .blp-r-hint').textContent);
+	check('unsupported files are explained in the drop zone', /not a \.saber, \.glb, \.gltf or \.obj file/.test(dropMsg), dropMsg);
 	await dropFile(fx.saberGlb.toString('base64'), 'test-saber.glb');
 	const modelsLoaded = () =>
 		['leftSaber', 'rightSaber'].every(k => {
@@ -404,6 +404,57 @@ function watch(page, label) {
 	await page.waitForFunction(() => !BLPR.ctx.leftSaber.querySelector('.blp-saber-model'), null, {timeout: 10000}).catch(() => null);
 	const removed = await page.evaluate(() => ({left: !!BLPR.ctx.leftSaber.querySelector('.blp-saber-model'), right: !!BLPR.ctx.rightSaber.querySelector('.blp-saber-model'), leftBlade: BLPR.ctx.leftSaber.querySelector('.bladeContainer').object3D.visible}));
 	check('removing the left model brings back its default blade', !removed.left && removed.right && removed.leftBlade, removed);
+	// A real .saber file (Unity asset bundle) holding a different left and right saber.
+	const saberFile = fs.readFileSync(path.join(DIR, '..', 'fixtures', 'saber-unity2019.4-lz4.saber'));
+	await dropFile(saberFile.toString('base64'), 'saber-unity2019.4-lz4.saber');
+	await page
+		.waitForFunction(
+			() => ['leftSaber', 'rightSaber'].every(k => {
+				const ent = BLPR.ctx[k].querySelector('.blp-saber-model');
+				const group = ent && ent.getObject3D('mesh');
+				return group && group.children.length && /saber-unity2019/.test(document.querySelector('#blp-sec-sabers').textContent) === false;
+			}),
+			null,
+			{timeout: 30000}
+		)
+		.catch(() => null);
+	const saberModel = await page.evaluate(() => {
+		const out = {};
+		for (const [k, hand] of [['leftSaber', 'left'], ['rightSaber', 'right']]) {
+			const ent = BLPR.ctx[k].querySelector('.blp-saber-model');
+			const group = ent && ent.getObject3D('mesh');
+			if (!group) continue;
+			const container = BLPR.ctx[k].querySelector('.saberContainer').object3D;
+			container.updateMatrixWorld(true);
+			const inv = new THREE.Matrix4();
+			if (inv.invert) inv.copy(container.matrixWorld).invert();
+			else inv.getInverse(container.matrixWorld);
+			const parts = group.children.map(mesh => {
+				const box = new THREE.Box3();
+				mesh.geometry.computeBoundingBox();
+				box.copy(mesh.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld));
+				const mats = mesh.geometry.groups.map(g => mesh.material[g.materialIndex]);
+				const rgb = c => [c.r, c.g, c.b].map(v => Math.round(v * 1000) / 1000);
+				return {name: mesh.name, minY: Math.round(box.min.y * 1000) / 1000, maxY: Math.round(box.max.y * 1000) / 1000, colors: mats.map(m => rgb(m.color)), textured: mats.map(m => !!m.map)};
+			});
+			const c = new THREE.Color(document.getElementById(hand + 'SaberColor').value);
+			out[hand] = {parts, saberColor: [c.r, c.g, c.b].map(v => Math.round(v * 1000) / 1000)};
+		}
+		out.status = Array.from(document.querySelectorAll('#blp-sec-sabers .blp-r-row .blp-r-hint')).map(e => e.textContent);
+		return out;
+	});
+	check('.saber file: left and right sabers read from the bundle', saberModel.left && saberModel.right && saberModel.left.parts.map(p => p.name).join() === 'BladeMesh,HandleMesh' && saberModel.right.parts.map(p => p.name).join() === 'BladeMesh', saberModel);
+	check('.saber file: blades point down the replayer saber (-Y), handle on the grip side', saberModel.left && Math.abs(saberModel.left.parts[0].minY + 1) < 0.01 && Math.abs(saberModel.right.parts[0].minY + 1.1) < 0.01 && saberModel.left.parts[1].minY >= 0.04, saberModel.left && [saberModel.left.parts, saberModel.right.parts]);
+	const sameColor = (a, b) => a && b && a.every((v, i) => Math.abs(v - b[i]) < 0.01);
+	check(
+		'.saber file: custom-color materials take the saber colors, textures applied',
+		saberModel.left && sameColor(saberModel.left.parts[0].colors[0], saberModel.left.saberColor) && sameColor(saberModel.right.parts[0].colors[0], saberModel.right.saberColor) && sameColor(saberModel.left.parts[1].colors[0], [0.3, 0.3, 0.35]) && saberModel.left.parts[0].textured[0],
+		saberModel.left && [saberModel.left.parts[0].colors, saberModel.left.saberColor, saberModel.right.parts[0].colors, saberModel.right.saberColor, saberModel.left.parts[1].colors]
+	);
+	const parsedIn = await page.evaluate(async b64 => (await BLP.unitySaber.readAsync(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))).parsedIn, saberFile.toString('base64'));
+	check('.saber files are read in a background worker on the replay page', parsedIn === 'worker', parsedIn);
+	check('.saber file: name and author from its descriptor', saberModel.status.length === 2 && saberModel.status.every(x => /Test Saber ✦ by BeatLeaderPlus tests ✓/.test(x)), saberModel.status);
+
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {style: 'default', customModel: {left: '', right: ''}}}}));
 	await page.keyboard.press('Backquote');
 
@@ -467,10 +518,13 @@ function watch(page, label) {
 	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows, [officialWindows, withLowAcc]);
 	await officialToggle('slowOnMiss', true); // any change makes the replayer recompute its windows
 	check('windows survive the replayer recomputing them', (await windows()) === withLowAcc);
-	await page.evaluate(t => BLPR.api.seek(t), fx.missTimes[2] - 0.05);
+	// Paused inside the window, so slow software rendering can't run the song past it.
+	await page.evaluate(() => BLPR.api.pause());
+	await page.evaluate(t => BLPR.api.seek(t), fx.missTimes[2] - 0.1);
 	await sleep(500);
-	const slow = await page.evaluate(() => BLPR.ctx.song().speed);
+	const slow = await page.evaluate(() => BLPR.ctx.songControls().getCurrentEffectiveSpeed());
 	check('official slow-mo engages around a miss', slow < 0.9, slow);
+	await page.evaluate(() => BLPR.api.play());
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
 	await sleep(300);
 	check('turning it off restores the official windows', (await windows()) === officialWindows);
