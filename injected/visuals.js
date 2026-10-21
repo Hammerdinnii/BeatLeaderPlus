@@ -12,8 +12,12 @@
  *   - show / hide sabers, trails, notes, bombs, walls, arcs and chains (THREE layers, so the
  *     replayer's own visibility logic and object pools are never touched)
  *   - accuracy heat: notes tinted with the cut score they receive in this replay
+ *   - note size (notes, bombs, chains) and wall opacity (a uniform added to the wall shader)
+ *   - brightness / contrast / saturation of the 3D view (a CSS filter on the canvas, which the
+ *     screenshot and clip code applies to its copies as well)
  *
- * Controls live in Settings → BL+ (sections "Notes", "Sabers & trails", "Effects", "Show").
+ * Controls live in Settings → BL+ (sections "Notes & walls", "Sabers & trails", "Effects", "Show",
+ * "Picture").
  */
 (function () {
 	'use strict';
@@ -40,6 +44,8 @@
 		beatsHidden: false,
 		heatTinted: false,
 		chainTinted: false,
+		beatsSized: false,
+		wallsFaded: false,
 		particles: null,
 		markers: [],
 		colorCache: new Map(),
@@ -1034,6 +1040,81 @@
 		st.chainTinted = chainOn;
 	}
 
+	/* ------------------------------------------------------------------ note size & wall opacity */
+
+	const SIZED = new Set(['notes', 'bombs', 'chains']);
+
+	// The replayer only scales a note's inner block, never the note entity itself (apart from its
+	// loading-screen cubes, which live outside the beat container), so the entity scale is ours.
+	function updateBeatSizes() {
+		const container = ctx.beatContainer;
+		if (!container) return;
+		const size = R.active() ? U.clamp(Number(vis().notes.size) || 100, 30, 200) / 100 : 1;
+		if (size === 1 && !st.beatsSized) return;
+		for (const child of container.children) {
+			if (!SIZED.has(beatCategory(child)) || !child.object3D) continue;
+			const sc = child.object3D.scale;
+			if (sc.x !== size || sc.y !== size || sc.z !== size) sc.setScalar(size);
+		}
+		st.beatsSized = size !== 1;
+	}
+
+	/** Adds an opacity factor to the replayer's wall shader (once per material). */
+	function patchWallMaterial(mat) {
+		if (!mat || !mat.uniforms || !mat.fragmentShader) return false;
+		if (!mat.userData.__blpWall) {
+			const i = mat.fragmentShader.lastIndexOf('}');
+			if (i < 0) return false;
+			mat.uniforms.blpOpacity = {value: 1};
+			mat.fragmentShader = 'uniform float blpOpacity;\n' + mat.fragmentShader.slice(0, i) + '  gl_FragColor.a *= blpOpacity;\n' + mat.fragmentShader.slice(i);
+			mat.transparent = true;
+			mat.needsUpdate = true;
+			mat.userData.__blpWall = true;
+		}
+		return true;
+	}
+
+	function updateWallOpacity() {
+		const container = ctx.beatContainer;
+		if (!container) return;
+		const opacity = R.active() ? U.clamp(Number(vis().notes.wallOpacity), 0, 100) / 100 : 1;
+		const faded = isFinite(opacity) && opacity < 1;
+		if (!faded && !st.wallsFaded) return;
+		for (const child of container.children) {
+			if (beatCategory(child) !== 'walls') continue;
+			const mesh = child.getObject3D && child.getObject3D('mesh');
+			if (mesh && patchWallMaterial(mesh.material)) mesh.material.uniforms.blpOpacity.value = faded ? opacity : 1;
+		}
+		st.wallsFaded = faded;
+	}
+
+	/* ------------------------------------------------------------------ picture */
+
+	/** CSS filter for the 3D view ('' when unchanged). Export uses it for screenshots and clips. */
+	function pictureFilter() {
+		const p = vis().picture;
+		if (!R.active() || !p) return '';
+		const parts = [];
+		for (const [key, fn] of [
+			['brightness', 'brightness'],
+			['contrast', 'contrast'],
+			['saturation', 'saturate'],
+		]) {
+			const v = U.clamp(Number(p[key]), 0, 300);
+			if (isFinite(v) && v !== 100) parts.push(fn + '(' + v / 100 + ')');
+		}
+		return parts.join(' ');
+	}
+
+	function applyPicture() {
+		const canvas = ctx.canvas;
+		if (!canvas) return;
+		const filter = pictureFilter();
+		if (canvas.style.filter !== filter) canvas.style.filter = filter;
+	}
+
+	R.pictureFilter = () => (ctx ? pictureFilter() : '');
+
 	/* ------------------------------------------------------------------ Settings → BL+ sections */
 
 	const set = (path, value) => R.setPath('visuals.' + path, value);
@@ -1048,6 +1129,17 @@
 		body.appendChild(ui.toggle(t('f.visuals.notes.arcOverride'), n.arcOverride, x => set('notes.arcOverride', x)));
 		if (n.arcOverride) body.appendChild(ui.color(t('f.visuals.notes.arc'), n.arc, x => set('notes.arc', x)));
 		body.appendChild(ui.toggle(t('f.visuals.accuracyHeat.enabled'), vis().accuracyHeat.enabled, x => set('accuracyHeat.enabled', x), t('d.visuals.accuracyHeat.enabled')));
+		body.appendChild(ui.range(t('f.visuals.notes.size'), {min: 50, max: 150, step: 5, value: n.size, unit: '%'}, x => set('notes.size', x)));
+		body.appendChild(ui.range(t('f.visuals.notes.wallOpacity'), {min: 0, max: 100, step: 5, value: n.wallOpacity, unit: '%'}, x => set('notes.wallOpacity', x)));
+	}
+
+	function renderPicture(body) {
+		const ui = R.ui;
+		const p = vis().picture;
+		for (const key of ['brightness', 'contrast', 'saturation']) {
+			body.appendChild(ui.range(t('f.visuals.picture.' + key), {min: key === 'saturation' ? 0 : 50, max: key === 'saturation' ? 200 : 150, step: 5, value: p[key], unit: '%'}, x => set('picture.' + key, x)));
+		}
+		if (pictureFilter()) body.appendChild(ui.row(ui.button(t('common.reset'), () => set('picture', {brightness: 100, contrast: 100, saturation: 100}))));
 	}
 
 	function renderSabers(body) {
@@ -1119,16 +1211,20 @@
 			R.ui.addSettingsSection({id: 'sabers', order: 20, title: () => t('r.sect.sabers'), render: renderSabers});
 			R.ui.addSettingsSection({id: 'effects', order: 30, title: () => t('r.sect.effects'), render: renderEffects});
 			R.ui.addSettingsSection({id: 'visibility', order: 40, title: () => t('r.sect.visibility'), render: renderVisibility});
+			R.ui.addSettingsSection({id: 'picture', order: 45, title: () => t('r.sect.picture'), render: renderPicture});
 		},
 		onSettings() {
 			if (!ctx) return;
 			applyNoteColors();
 			applySaberStyle();
+			applyPicture();
 			if (!R.active()) {
 				// Ticks stop while disabled, so restore everything right away.
 				updateTrails();
 				updateVisibility();
 				updateBeatTints();
+				updateBeatSizes();
+				updateWallOpacity();
 				st.particles.clear();
 				st.particles.update(0);
 				updateMarkers(1e9);
@@ -1142,6 +1238,8 @@
 			updateTrails();
 			updateVisibility();
 			updateBeatTints();
+			updateBeatSizes();
+			updateWallOpacity();
 			applyArcColor();
 			saberParticles(frame.dt);
 			st.particles.update(frame.dt);
@@ -1150,6 +1248,7 @@
 		maintain() {
 			applyNoteColors();
 			applySaberStyle();
+			applyPicture();
 		},
 	});
 })();

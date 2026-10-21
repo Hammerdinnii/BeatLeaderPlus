@@ -168,6 +168,15 @@ function watch(page, label) {
 			},
 			[id, on]
 		);
+	const officialRange = (id, value) =>
+		page.evaluate(
+			([id, value]) => {
+				const input = document.getElementById(id);
+				input.value = value;
+				input.dispatchEvent(new Event('input', {bubbles: true}));
+			},
+			[id, value]
+		);
 	const closeMenus = () =>
 		page.evaluate(() => {
 			for (const id of ['settingsContainer', 'cameraSettingsContainer']) document.getElementById(id).classList.remove('settingsActive');
@@ -211,7 +220,7 @@ function watch(page, label) {
 	const controlsShown = await page.evaluate(() => document.body.classList.contains('showControls') && getComputedStyle(document.getElementById('blpSettingsPane')).display !== 'none');
 	check('` opens Settings → BL+ (visible while playing)', st.open && st.blp && st.tab && !st.official && controlsShown, [st, controlsShown]);
 	const sections = await page.evaluate(() => Array.from(document.querySelectorAll('#blpSettingsPane > .blp-r-section')).map(s => s.id.replace('blp-sec-', '')));
-	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,playback,timeline,audio,export,interface', sections);
+	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,picture,playback,timeline,audio,export,hud,interface', sections);
 	await page.click('#settingsContainer .settings-tab-button >> nth=0');
 	st = await settingsState();
 	check("the replayer's own tabs keep working", st.open && !st.blp && st.official, st);
@@ -247,9 +256,65 @@ function watch(page, label) {
 	check('Orbit button switches mode and keeps the camera menu open', camMenu.open && camMenu.mode === 'orbit' && camMenu.active, camMenu);
 	await page.click('#blpCameraTab');
 	await sleep(200);
-	const camTab = await page.evaluate(() => ({active: document.getElementById('blpCameraPane').classList.contains('active'), sections: document.querySelectorAll('#blpCameraPane > .blp-r-section').length}));
-	check('BL+ camera tab renders', camTab.active && camTab.sections === 4, camTab);
-	await page.click('#cameraSettingsContainer .camera-tab-button >> nth=0');
+	const camTab = await page.evaluate(() => ({
+		active: document.getElementById('blpCameraPane').classList.contains('active'),
+		sections: Array.from(document.querySelectorAll('#blpCameraPane > .blp-r-section > .blp-r-header')).map(e => e.textContent),
+	}));
+	check('BL+ camera tab starts with first person, then ortho', camTab.active && camTab.sections.length === 6 && camTab.sections[0] === 'First person' && camTab.sections[1] === 'Orthographic views', camTab);
+	if (process.env.BLP_SHOTS) await page.locator('#cameraSettingsContainer').screenshot({path: path.join(process.env.BLP_SHOTS, 'camera-tab.png')});
+	// Its first-person and ortho controls are the replayer's own settings, in both directions.
+	const fpvSection = '#blpCameraPane > .blp-r-section:nth-child(1)';
+	await page.click(fpvSection + ' .blp-r-toggle .switch >> nth=0');
+	await sleep(500);
+	const fpvOn = await page.evaluate(sel => ({pov: BLPR.ctx.cameraMover().pov, mode: BLPR.camera.mode, saved: BLPR.official.get('fpvCameraIsOn'), toggle: document.querySelector(sel + ' .blp-r-toggle input').checked}), fpvSection);
+	check('First person toggle switches to the replayer\'s FPV camera', fpvOn.pov && fpvOn.mode === 'pov' && fpvOn.saved && fpvOn.toggle, fpvOn);
+	const rangeIn = (section, label) =>
+		page.evaluate(
+			([section, label]) => {
+				const row = Array.from(document.querySelectorAll(section + ' .blp-r-range')).find(r => r.textContent.startsWith(label));
+				return row ? row.querySelector('input').value : null;
+			},
+			[section, label]
+		);
+	await page.evaluate(sel => {
+		const row = Array.from(document.querySelectorAll(sel + ' .blp-r-range')).find(r => r.textContent.startsWith('Field of view'));
+		const input = row.querySelector('input');
+		input.value = '95';
+		input.dispatchEvent(new Event('input', {bubbles: true}));
+	}, fpvSection);
+	await sleep(400);
+	const fov = await page.evaluate(() => ({setting: Number(BLPR.official.get('fov')), slider: document.getElementById('fov').value, label: document.getElementById('fovLabel').textContent, camera: BLPR.ctx.povCamera.getAttribute('camera').fov}));
+	// (the label's ° goes through the replayer's own bundle, which the test server sends without a charset)
+	check('BL+ field of view changes the replayer\'s own FPV setting', fov.setting === 95 && fov.slider === '95' && /^95/.test(fov.label) && Number(fov.camera) === 95, fov);
+	await officialRange('cameraZPosition', 2.5);
+	await sleep(500);
+	check('changing it in the FPV tab updates the BL+ tab', (await rangeIn(fpvSection, 'Z position offset')) === '2.5', await rangeIn(fpvSection, 'Z position offset'));
+	const orthoSection = '#blpCameraPane > .blp-r-section:nth-child(2)';
+	// The replayer hides its menus while playing once the mouse rests; click the way a user's click lands.
+	await page.locator(orthoSection + ' .blp-r-toggle .switch').first().evaluate(el => el.click());
+	await sleep(500);
+	const ortho = await page.evaluate(sel => ({top: BLPR.official.get('orthographicTopEnabled'), box: document.getElementById('orthographicTopEnabled').checked, ranges: document.querySelectorAll(sel + ' .blp-r-range').length}), orthoSection);
+	check('ortho toggle turns on the replayer\'s top view, with its zoom and distance', ortho.top === true && ortho.box && ortho.ranges >= 2, ortho);
+	await officialToggle('orthographicTopEnabled', false);
+	await officialRange('cameraZPosition', 1);
+	await officialRange('fov', 60);
+	// BL+ additions to the first-person camera: offsets, smoothing and a level horizon.
+	const wasPlaying = await page.evaluate(() => BLPR.api.isPlaying());
+	await page.evaluate(() => BLPR.patchSettings({camera: {fpv: {height: 0.5, side: 0, smoothing: 0, levelHorizon: true}}}));
+	await page.evaluate(() => BLPR.api.play());
+	await sleep(1500);
+	const rig = await page.evaluate(() => {
+		const r = document.querySelector('.headCamera').object3D;
+		const head = BLPR.ctx.headset.object3D;
+		return {dy: r.position.y - head.position.y, roll: r.rotation.z};
+	});
+	check('first-person height offset and level horizon', Math.abs(rig.dy - 0.5) < 0.02 && Math.abs(rig.roll - Math.PI) < 1e-6, rig);
+	await page.evaluate(() => BLPR.patchSettings({camera: {fpv: {height: 0, side: 0, smoothing: 50, levelHorizon: false}}}));
+	if (!wasPlaying) await page.evaluate(() => BLPR.api.pause());
+	await page.keyboard.press('Shift+KeyF'); // the replayer's own FPV hotkey
+	await sleep(400);
+	check('the replayer\'s Shift+F keeps BL+ in step', await page.evaluate(() => !BLPR.ctx.cameraMover().pov && BLPR.camera.mode === 'default'));
+	await page.evaluate(() => window.changeCameraTab(0)); // its menus are hidden by now (mouse idle while playing)
 	await closeMenus();
 
 	// Camera modes
@@ -261,7 +326,11 @@ function watch(page, label) {
 	await page.evaluate(() => BLPR.camera.setMode('orbit'));
 	await sleep(800);
 	const orbitA = await camPos();
-	await sleep(500);
+	// Headless software rendering runs the replayer at about one frame a second: wait for frames.
+	await page.waitForFunction(a => {
+		const p = BLPR.ctx.mainCamera.object3D.position;
+		return [p.x, p.y, p.z].some((v, i) => Math.abs(Math.round(v * 100) / 100 - a[i]) > 0.005);
+	}, orbitA, {timeout: 5000}).catch(() => null);
 	const orbitB = await camPos();
 	check('orbit camera moves', JSON.stringify(orbitA) !== JSON.stringify(orbitB), [orbitA, orbitB]);
 	check('official look-controls paused while BL+ drives the camera', await page.evaluate(() => BLPR.ctx.mainCamera.getAttribute('look-controls').enabled === false));
@@ -490,6 +559,46 @@ function watch(page, label) {
 	check('PP line follows the replayer\'s "Show HUD"', await page.evaluate(() => document.getElementById('blpHudPp').object3D.visible === false));
 	await officialToggle('showHud', true);
 
+	// Score HUD size, height, color and parts
+	await page.evaluate(() => BLPR.patchSettings({overlay: {hud: {scale: 150, height: 0.3, colorOverride: true, color: '#ff0000', show: {combo: false}}}}));
+	await sleep(900);
+	const hudLook = await page.evaluate(() => {
+		const o = document.getElementById('scoreContainer').object3D;
+		const mask = id => document.getElementById(id).object3D.layers.mask;
+		return {scale: o.scale.x, y: Math.round(o.position.y * 1000) / 1000, combo: mask('combo'), accuracy: mask('accuracy'), color: document.getElementById('score').getAttribute('text').color};
+	});
+	check('HUD resized around its middle, raised, recolored, combo hidden', hudLook.scale === 1.5 && hudLook.y === -0.2 && hudLook.combo === 0 && hudLook.accuracy !== 0 && hudLook.color === '#ff0000', hudLook);
+	await page.evaluate(() => BLPR.patchSettings({overlay: {hud: {scale: 100, height: 0, colorOverride: false, show: {combo: true}}}}));
+	await sleep(900);
+	const hudBack = await page.evaluate(() => {
+		const o = document.getElementById('scoreContainer').object3D;
+		return {scale: o.scale.x, y: o.position.y, combo: document.getElementById('combo').object3D.layers.mask, color: document.getElementById('score').getAttribute('text').color};
+	});
+	check('HUD back to the replayer\'s own look', hudBack.scale === 1 && hudBack.y === 0 && hudBack.combo !== 0 && /^#fafafa$/i.test(hudBack.color), hudBack);
+
+	// Note size, wall opacity and picture
+	await page.evaluate(() => BLPR.patchSettings({visuals: {notes: {size: 130, wallOpacity: 40}, picture: {brightness: 120, contrast: 100, saturation: 80}}}));
+	await sleep(1200);
+	const looks = await page.evaluate(() => {
+		const kids = Array.from(BLPR.ctx.beatContainer.children);
+		const notes = kids.filter(c => c.components && c.components.beat && c.components.beat.data.type !== 'mine').map(c => c.object3D.scale.x);
+		const walls = kids.filter(c => c.components && c.components.wall).map(c => {
+			const m = c.getObject3D('mesh');
+			return m && m.material.uniforms.blpOpacity ? m.material.uniforms.blpOpacity.value : null;
+		});
+		return {notes: notes.length, sized: notes.every(v => Math.abs(v - 1.3) < 1e-6), walls: walls.length, faded: walls.every(v => v !== null && Math.abs(v - 0.4) < 1e-6), filter: BLPR.ctx.canvas.style.filter};
+	});
+	check('note size applies to every note', looks.notes > 0 && looks.sized, looks);
+	check('wall opacity applies to the replayer\'s wall shader', looks.walls > 0 && looks.faded, looks);
+	check('picture brightness / saturation filter the 3D view', looks.filter === 'brightness(1.2) saturate(0.8)', looks.filter);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {notes: {size: 100, wallOpacity: 100}, picture: {brightness: 100, saturation: 100}}}));
+	await sleep(800);
+	const looksBack = await page.evaluate(() => ({
+		notes: Array.from(BLPR.ctx.beatContainer.children).filter(c => c.components && c.components.beat).every(c => c.object3D.scale.x === 1),
+		filter: BLPR.ctx.canvas.style.filter,
+	}));
+	check('note size and picture reset cleanly', looksBack.notes && looksBack.filter === '', looksBack);
+
 	// Playback
 	const beforeStep = await page.evaluate(() => BLPR.api.time());
 	await page.keyboard.press('BracketRight');
@@ -530,9 +639,16 @@ function watch(page, label) {
 
 	// Low-accuracy cuts join the replayer's own "change speed around mistakes"
 	const windows = () => page.evaluate(() => BLPR.ctx.songControls().missWindows.length);
-	await officialToggle('autoSpeedControls', true);
-	const officialWindows = await windows();
+	const officialSlow = () => page.evaluate(() => ({setting: BLPR.official.get('autoSpeedControls'), box: document.getElementById('autoSpeedControls').checked}));
+	const slowBefore = await officialSlow();
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true, lowAccThreshold: 100}}));
+	await sleep(600);
+	const slowLinked = await officialSlow();
+	check("low-acc slow-mo turns on the replayer's own \"Change speed around mistakes\"", !slowBefore.setting && slowLinked.setting === true && slowLinked.box, [slowBefore, slowLinked]);
+	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
+	await sleep(400);
+	const officialWindows = await windows();
+	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true}}));
 	await sleep(500);
 	const withLowAcc = await windows();
 	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows, [officialWindows, withLowAcc]);
@@ -548,7 +664,36 @@ function watch(page, label) {
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
 	await sleep(300);
 	check('turning it off restores the official windows', (await windows()) === officialWindows);
+	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true}}));
+	await sleep(400);
 	await officialToggle('autoSpeedControls', false);
+	await sleep(800);
+	check("turning the replayer's own off turns low-acc slow-mo off too", await page.evaluate(() => BLPR.settings.playback.slowOnLowAcc === false && !BLPR.official.get('autoSpeedControls')));
+
+	// Pause at mistakes
+	await page.evaluate(() => BLPR.patchSettings({playback: {pauseOnMistakes: true}}));
+	const pauseFrom = fx.missTimes[3] - 1;
+	await page.evaluate(t => {
+		BLPR.api.seek(t);
+		BLPR.api.play();
+	}, pauseFrom);
+	await page.waitForFunction(() => !BLPR.api.isPlaying(), null, {timeout: 15000}).catch(() => null);
+	const paused = await page.evaluate(from => {
+		const first = BLPR.replayInfo.notes.find(n => n.time > from + 0.05 && BLPR.api.noteKind(n) !== 'good');
+		return {playing: BLPR.api.isPlaying(), time: BLPR.api.time(), mistake: first && first.time};
+	}, pauseFrom);
+	check('pause at mistakes stops on the next mistake', !paused.playing && paused.mistake && paused.time >= paused.mistake - 0.05 && paused.time < paused.mistake + 2, paused);
+	await page.evaluate(() => BLPR.patchSettings({playback: {pauseOnMistakes: false}}));
+	await page.evaluate(() => BLPR.api.play());
+
+	// Speed buttons in Settings → BL+ → Playback
+	await page.evaluate(() => BLPR.ui.refresh(true));
+	await sleep(300);
+	const speedButtons = await page.evaluate(() => Array.from(document.querySelectorAll('#blp-sec-playback .blp-r-btn')).map(b => b.textContent).filter(x => /x$/.test(x)));
+	await page.evaluate(() => Array.from(document.querySelectorAll('#blp-sec-playback .blp-r-btn')).find(b => b.textContent === '0.5x').click());
+	await sleep(300);
+	check('speed buttons set the replayer speed', speedButtons.join(',') === '0.5x,0.75x,1x,1.25x' && (await page.evaluate(() => BLPR.api.getSpeed())) === 0.5, [speedButtons, await page.evaluate(() => BLPR.api.getSpeed())]);
+	await page.evaluate(() => BLPR.api.setSpeed(1));
 
 	// Right-click menu + export
 	await page.mouse.move(600, 300);
@@ -668,15 +813,48 @@ function watch(page, label) {
 		const box = main.getBoundingClientRect();
 		const ours = Array.from(main.querySelectorAll(':scope > span > .blp-site-icon')).map(b => {
 			const r = b.getBoundingClientRect();
-			return {cls: b.className.split(' ').find(c => /^blp-(dl|enh|cmp)$/.test(c)), w: Math.round(r.width), h: Math.round(r.height), inside: r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5, hit: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b};
+			return {cls: b.className.split(' ').find(c => /^blp-(dl|cmp)$/.test(c)), w: Math.round(r.width), h: Math.round(r.height), inside: r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5, hit: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b};
 		});
 		return {ours, wrapped: !!main.querySelector('.blp-actions'), cells: main.querySelectorAll(':scope > span > *').length};
 	});
-	check('BL+ buttons fit the site icon grid as separate cells', !grid.wrapped && grid.ours.length === 3 && grid.ours.every(b => b.w === 22 && b.h === 22 && b.inside && b.hit), grid);
+	check('BL+ buttons fit the site icon grid as separate cells', !grid.wrapped && grid.ours.length === 2 && grid.ours.every(b => b.w === 22 && b.h === 22 && b.inside && b.hit), grid);
 	check('favorite stars on player & map links once enabled (not in nav)', siteInfo.stars >= 4 && siteInfo.navStars === 0, siteInfo);
 	check('dock shown on leaderboard', siteInfo.dock);
 	check('OLED theme applied to site', siteInfo.themed && siteInfo.bg === 'rgb(0, 0, 0)', siteInfo.bg);
 	check('rank #1 color re-mapped', siteInfo.rank1 === '#ffc400', siteInfo.rank1);
+
+	// The dock can be resized, and dragged to any edge, where it runs along that edge.
+	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {dockSize: 150}}));
+	await site.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('#blp-dock .blp-dock-brand')).fontSize) > 20, null, {timeout: 5000}).catch(() => null);
+	const brandFont = await site.evaluate(() => parseFloat(getComputedStyle(document.querySelector('#blp-dock .blp-dock-brand')).fontSize));
+	check('dock size setting scales the BL+ button', Math.abs(brandFont - 24) < 0.5, brandFont);
+	const dockState = () =>
+		site.evaluate(() => {
+			const d = document.getElementById('blp-dock');
+			const r = d.getBoundingClientRect();
+			const vw = document.documentElement.clientWidth;
+			return {vertical: d.classList.contains('blp-dock-v'), open: d.classList.contains('blp-dock-open'), inside: r.left >= 0 && r.right <= vw && r.top >= 0 && r.bottom <= innerHeight, right: Math.round(vw - r.right), bottom: Math.round(innerHeight - r.bottom), edge: d.dataset.edge};
+		});
+	const dockBefore = await dockState();
+	const brandAt = await site.evaluate(() => {
+		const r = document.querySelector('#blp-dock .blp-dock-brand').getBoundingClientRect();
+		return {x: r.left + r.width / 2, y: r.top + r.height / 2, w: document.documentElement.clientWidth, h: innerHeight};
+	});
+	await site.mouse.move(brandAt.x, brandAt.y);
+	await site.mouse.down();
+	for (let i = 1; i <= 10; i++) await site.mouse.move(brandAt.x + ((brandAt.w - 4 - brandAt.x) * i) / 10, brandAt.y + ((brandAt.h * 0.35 - brandAt.y) * i) / 10);
+	await site.mouse.up();
+	await sleep(500);
+	const dockMoved = await dockState();
+	const dockSaved = (await sw.evaluate(() => chrome.storage.local.get('blp_site_ui'))).blp_site_ui;
+	check('dragged to the right edge, the dock turns vertical and stays on screen', dockMoved.vertical && dockMoved.inside && dockMoved.right < 30 && dockSaved && dockSaved.dock.edge === 'right', [dockMoved, dockSaved]);
+	check('dragging does not open or close the dock', dockMoved.open === dockBefore.open, [dockBefore.open, dockMoved.open]);
+	await site.dblclick('#blp-dock .blp-dock-brand');
+	await sleep(500);
+	const dockReset = await dockState();
+	check('double-click puts the dock back along the bottom', !dockReset.vertical && dockReset.edge === 'bottom' && dockReset.bottom < 30 && dockReset.open === dockBefore.open, dockReset);
+	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {dockSize: 100}}));
+	await sleep(400);
 	await site.click('.player-score .blp-star');
 	await sleep(600);
 	const favs = await sw.evaluate(() => chrome.storage.local.get('blp_favorites'));
@@ -713,8 +891,7 @@ function watch(page, label) {
 	await site.keyboard.press('Alt+Shift+ArrowRight');
 	await sleep(200);
 	check('next page hotkey clicks pagination', (await site.evaluate(() => window.__page)) === 2);
-	const enhancedHref = await site.evaluate(() => (document.querySelector('.blp-enh') ? 'ok' : 'missing'));
-	check('enhanced replay button present', enhancedHref === 'ok');
+	check('no "Open in Enhanced Replayer" button', await site.evaluate(() => !document.querySelector('.blp-enh, [title*="Enhanced"]')));
 	await site.click('.blp-cmp');
 	await site.click('.player-score:nth-child(2) .blp-cmp');
 	await site.waitForSelector('#blp-modal .blp-cmp-table', {timeout: 10000}).catch(() => null);

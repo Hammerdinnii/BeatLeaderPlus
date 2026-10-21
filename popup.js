@@ -189,7 +189,7 @@
 			return;
 		}
 		for (const s of scores) {
-			const url = U.buildEnhancedReplayUrl({scoreId: s.scoreId}, settings);
+			const url = U.replayUrl({scoreId: s.scoreId});
 			list.appendChild(
 				h(
 					'a',

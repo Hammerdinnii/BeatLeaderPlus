@@ -22,7 +22,6 @@ const log = U.createLogger('[BLP:bg]', () => debugEnabled);
 
 const FOLLOW_ALARM = 'blp-follow-poll';
 const FETCH_ALLOW = /^https:\/\/(api\.beatleader\.(com|xyz|net)|cdn\.scorestats\.beatleader\.(com|xyz|net))\//i;
-const OPEN_ALLOW = /^https:\/\/([a-z0-9-]+\.)*beatleader\.(com|xyz|net)\//i;
 const INJECT_ALLOW = /^(injected\/[a-z0-9-]+\.js|injected-replay\.js|lib\/(i18n|utils)\.js)$/i;
 const REPLAY_LINK_PATTERNS = ['*://replay.beatleader.com/*', '*://replay.beatleader.xyz/*', '*://replay.beatleader.net/*'];
 
@@ -286,12 +285,6 @@ async function unfollowPlayer({playerId}) {
 function setupContextMenus() {
 	chrome.contextMenus.removeAll(() => {
 		chrome.contextMenus.create({
-			id: 'blp-open-enhanced',
-			title: i18n.t('bg.ctxEnhanced'),
-			contexts: ['link'],
-			targetUrlPatterns: REPLAY_LINK_PATTERNS,
-		});
-		chrome.contextMenus.create({
 			id: 'blp-download-bsor',
 			title: i18n.t('bg.ctxDownload'),
 			contexts: ['link'],
@@ -300,14 +293,11 @@ function setupContextMenus() {
 	});
 }
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener(async info => {
 	const parsed = U.parseReplayUrl(info.linkUrl || '');
 	if (!parsed) return;
 	try {
-		if (info.menuItemId === 'blp-open-enhanced') {
-			const settings = await loadSettings();
-			await chrome.tabs.create({url: U.buildEnhancedReplayUrl(parsed, settings), index: tab ? tab.index + 1 : undefined});
-		} else if (info.menuItemId === 'blp-download-bsor') {
+		if (info.menuItemId === 'blp-download-bsor') {
 			await downloadReplay(parsed);
 		}
 	} catch (e) {
@@ -320,9 +310,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 chrome.notifications.onClicked.addListener(async id => {
 	const match = /^blp-score-(.+)$/.exec(id);
-	const settings = await loadSettings();
 	if (match) {
-		await chrome.tabs.create({url: U.buildEnhancedReplayUrl({scoreId: match[1]}, settings)});
+		await chrome.tabs.create({url: U.replayUrl({scoreId: match[1]})});
 	} else if (id.startsWith('blp-scores-')) {
 		try {
 			await chrome.action.openPopup();
@@ -348,13 +337,6 @@ const handlers = {
 		} else {
 			await chrome.tabs.create({url});
 		}
-		return true;
-	},
-	async openTab(msg, sender) {
-		if (!OPEN_ALLOW.test(msg.url || '')) throw new Error('URL not allowed');
-		const opts = {url: msg.url, active: msg.active !== false};
-		if (sender.tab) opts.index = sender.tab.index + 1;
-		await chrome.tabs.create(opts);
 		return true;
 	},
 	async fetchJson(msg) {

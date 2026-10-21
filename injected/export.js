@@ -122,6 +122,8 @@
 
 	/* ------------------------------------------------------------------ screenshot */
 
+	const pictureFilter = () => (R.pictureFilter && R.pictureFilter()) || 'none';
+
 	function baseFilename() {
 		const info = R.replayInfo;
 		const name = info ? `${info.playerName} - ${info.songName}` : 'replay';
@@ -182,7 +184,9 @@
 		const out = document.createElement('canvas');
 		out.width = shot.w;
 		out.height = shot.h;
-		out.getContext('2d').drawImage(img, 0, 0, shot.w, shot.h);
+		const g = out.getContext('2d');
+		g.filter = pictureFilter(); // brightness / contrast / saturation set in Settings → BL+
+		g.drawImage(img, 0, 0, shot.w, shot.h);
 		const mime = {png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp'}[s.format] || 'image/png';
 		const blob = await new Promise(resolve => out.toBlob(resolve, mime, 0.92));
 		U.downloadBlob(blob, baseFilename() + '.' + (s.format === 'jpeg' ? 'jpg' : s.format || 'png'));
@@ -266,8 +270,10 @@
 		const dw = gl.width * scale;
 		const dh = gl.height * scale;
 		const g = clip.g;
+		g.filter = 'none';
 		g.fillStyle = '#000';
 		g.fillRect(0, 0, W, H);
+		g.filter = pictureFilter();
 		g.drawImage(gl, (W - dw) / 2, (H - dh) / 2, dw, dh);
 	}
 
