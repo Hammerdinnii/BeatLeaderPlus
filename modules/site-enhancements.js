@@ -7,10 +7,10 @@
  *   - auto-expand score details
  *   - quick filters (my scores, clan, high accuracy, full combo)
  *   - optional extra badges (misses / bad cuts / pauses / max combo) fetched from the API
- *   - a floating "dock" with page-specific actions (follow a player, filters, comparison tray,
- *     profile statistics)
+ *   - a floating "dock" with page-specific actions (filters, comparison tray, profile statistics)
  *
- * Favorite players and maps are BeatLeader's own: its follow button and "Add to playlist".
+ * Following and favoriting players and maps are BeatLeader's own: its follow button and
+ * "Add to playlist".
  *
  * The BeatLeader website is a Svelte SPA. To stay robust against its re-renders we never move
  * or remove site nodes: we only add small sibling elements (marked with [data-blp-ui]) and use a
@@ -49,7 +49,6 @@
 	const state = {
 		started: false,
 		observer: null,
-		followed: {},
 		compare: [],
 		filter: 'all',
 		dockOpen: false,
@@ -119,11 +118,6 @@
 	}
 
 	/* ------------------------------------------------------------------ data */
-
-	async function loadFollowed() {
-		const st = await storage.getLocal(D.KEYS.follow, D.DEFAULT_FOLLOW_STATE);
-		state.followed = st.players || {};
-	}
 
 	/** Fetch a score from the API (through the background worker, cached). */
 	function getScore(scoreId) {
@@ -607,35 +601,6 @@
 		if (info.type === 'profile') {
 			const id = info.playerId;
 			const name = profileNameGuess() || id;
-			if (s.follow.enabled) {
-				const lower = String(id).toLowerCase();
-				const following = !!state.followed[id] || Object.values(state.followed).some(p => p.alias && String(p.alias).toLowerCase() === lower);
-				items.push(
-					h(
-						'button',
-						{
-							class: 'blp-chip' + (following ? ' blp-active' : ''),
-							type: 'button',
-							onclick: async () => {
-								try {
-									if (following) {
-										await BLP.send('unfollow', {playerId: id});
-										toast(t('site.unfollowed', {name}));
-									} else {
-										await BLP.send('follow', {playerId: id, name});
-										toast(t('site.followed', {name}), 'success');
-									}
-									await loadFollowed();
-									renderDock();
-								} catch (e) {
-									toast(e.message, 'error');
-								}
-							},
-						},
-						t(following ? 'site.unfollow' : 'site.follow')
-					)
-				);
-			}
 			if (s.profileStats && BLP.profileStats) {
 				items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => BLP.profileStats.open(id, name)}, t('site.profileStats')));
 			}
@@ -771,17 +736,13 @@
 		async start() {
 			if (state.started) return;
 			state.started = true;
-			await Promise.all([loadFollowed(), storage.getLocal(D.KEYS.siteUi, {}).then(ui => (state.dockPos = cleanDockPos(ui && ui.dock)))]);
+			state.dockPos = cleanDockPos(((await storage.getLocal(D.KEYS.siteUi, {})) || {}).dock);
 			// Moved in another tab: follow it here too.
 			storage.onLocalChanged(D.KEYS.siteUi, ui => {
 				state.dockPos = cleanDockPos(ui && ui.dock);
 				layoutDock(document.getElementById('blp-dock'));
 			});
 			window.addEventListener('resize', U.debounce(() => layoutDock(document.getElementById('blp-dock')), 100));
-			storage.onLocalChanged(D.KEYS.follow, async () => {
-				await loadFollowed();
-				renderDock();
-			});
 			state.observer = new MutationObserver(mutations => {
 				// Ignore mutations caused only by our own UI.
 				for (const m of mutations) {
