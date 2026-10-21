@@ -71,6 +71,32 @@
 	line-height: 1;
 }
 
+/* Inside BeatLeader's score icon grid, which sizes every item (22px cells): look like the site's
+ * own default icon buttons. */
+.buttons-container > span > .blp-site-icon {
+	margin: 0;
+	padding: 0;
+	color: #444;
+	background: #dbdbdb;
+	border: 1px solid transparent;
+	opacity: 0.6;
+	transition: opacity 0.2s, transform 0.2s;
+}
+
+.buttons-container > span > .blp-site-icon:hover {
+	opacity: 1;
+	transform: scale(1.1);
+	color: #222;
+	background: #dbdbdb linear-gradient(0deg, transparent, #ffffff66);
+	border-color: transparent;
+}
+
+.buttons-container > span > .blp-site-icon.blp-active {
+	opacity: 1;
+	color: #fff;
+	background: var(--blpu-primary);
+}
+
 .blp-icon-btn.blp-active,
 .blp-cmp.blp-active {
 	background: var(--blpu-primary);

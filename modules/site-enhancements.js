@@ -206,23 +206,38 @@
 			const parsed = U.parseReplayUrl(a.href);
 			if (!parsed) return;
 			a.dataset.blpDone = '1';
-			const group = h('span', {class: 'blp-actions', 'data-blp-ui': ''});
-			if (s.downloadButton) {
+			// Score rows put their icons in a grid that forces every item into a 22px cell
+			// (.buttons-container > span > *). There our buttons join the grid one by one, styled
+			// like the site's own, instead of as one group squeezed into a single cell.
+			const grid = a.parentElement && a.parentElement.parentElement && a.parentElement.parentElement.classList.contains('buttons-container') ? a.closest('.buttons-container') : null;
+			const buttons = [];
+			// The site has its own .bsor download icon, if the user turned it on.
+			const siteDownload = grid && Array.from(grid.querySelectorAll('a[href]')).some(x => /\.bsor(\?|$)/i.test(x.getAttribute('href')) && !/replay\.beatleader\./.test(x.href));
+			if (s.downloadButton && !siteDownload) {
 				const b = iconButton('⬇', t('site.download'), () => downloadReplay(parsed, b), 'blp-dl');
-				group.appendChild(b);
+				buttons.push(b);
 			}
-			if (s.enhancedReplayButton) group.appendChild(iconButton('✦', t('site.enhanced'), e => openEnhanced(parsed, e), 'blp-enh'));
+			if (s.enhancedReplayButton) buttons.push(iconButton('✦', t('site.enhanced'), e => openEnhanced(parsed, e), 'blp-enh'));
 			if (s.compare && parsed.scoreId) {
 				const b = iconButton('⚖', t('site.compare'), () => toggleCompare(parsed.scoreId), 'blp-cmp');
 				b.dataset.scoreId = parsed.scoreId;
-				group.appendChild(b);
+				buttons.push(b);
 			}
+			let badges = null;
 			if (s.extraBadges && parsed.scoreId) {
-				const badges = h('span', {class: 'blp-badges', 'data-blp-ui': '', dataset: {scoreId: parsed.scoreId}});
-				group.appendChild(badges);
+				badges = h('span', {class: 'blp-badges', 'data-blp-ui': '', dataset: {scoreId: parsed.scoreId}});
 				observeBadges(badges);
 			}
-			if (group.childNodes.length) a.insertAdjacentElement('afterend', group);
+			if (grid) {
+				buttons.forEach(b => b.classList.add('blp-site-icon'));
+				a.after(...buttons);
+				// Badges are wider than a grid cell: put them after the whole button layout.
+				if (badges) (grid.closest('.score-action-buttons-layout, .score-action-icons-layout') || grid).after(badges);
+			} else {
+				const group = h('span', {class: 'blp-actions', 'data-blp-ui': ''}, ...buttons);
+				if (badges) group.appendChild(badges);
+				if (group.childNodes.length) a.insertAdjacentElement('afterend', group);
+			}
 		});
 		refreshCompareButtons();
 	}
