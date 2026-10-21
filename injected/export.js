@@ -20,7 +20,7 @@
 	const t = (k, v) => R.t(k, v);
 
 	let ctx = null;
-	const clip = {rec: null, out: null, g: null, timer: null, chunks: [], audio: null, startedAt: 0};
+	const clip = {rec: null, out: null, g: null, timer: null, chunks: [], audio: null, startedAt: 0, lastRender: -1};
 	const KEEP_PARAMS = ['scoreId', 'link', 'playlist', 'id', 'difficulty', 'mode', 'playerID', 'hash', 'context'];
 
 	/* ------------------------------------------------------------------ share link */
@@ -263,6 +263,11 @@
 	/** Runs in the frame's tock (after rendering), while the WebGL buffer still holds the frame. */
 	function captureClipFrame() {
 		if (!clip.rec || !clip.g) return;
+		// Copy each drawn frame once, from the tock that follows its drawing. The replayer also runs
+		// tocks without drawing (and the FPS limiter skips frames), when the buffer may be cleared.
+		const renders = R.performance ? R.performance.renders : -1;
+		if (renders >= 0 && renders === clip.lastRender) return;
+		clip.lastRender = renders;
 		const gl = ctx.renderer.domElement;
 		const W = clip.out.width;
 		const H = clip.out.height;
