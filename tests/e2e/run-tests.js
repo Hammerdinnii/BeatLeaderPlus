@@ -220,7 +220,7 @@ function watch(page, label) {
 	const controlsShown = await page.evaluate(() => document.body.classList.contains('showControls') && getComputedStyle(document.getElementById('blpSettingsPane')).display !== 'none');
 	check('` opens Settings → BL+ (visible while playing)', st.open && st.blp && st.tab && !st.official && controlsShown, [st, controlsShown]);
 	const sections = await page.evaluate(() => Array.from(document.querySelectorAll('#blpSettingsPane > .blp-r-section')).map(s => s.id.replace('blp-sec-', '')));
-	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,picture,playback,timeline,audio,export,hud,interface', sections);
+	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,picture,playback,timeline,performance,audio,export,hud,interface', sections);
 	await page.click('#settingsContainer .settings-tab-button >> nth=0');
 	st = await settingsState();
 	check("the replayer's own tabs keep working", st.open && !st.blp && st.official, st);
@@ -694,6 +694,25 @@ function watch(page, label) {
 	await sleep(300);
 	check('speed buttons set the replayer speed', speedButtons.join(',') === '0.5x,0.75x,1x,1.25x' && (await page.evaluate(() => BLPR.api.getSpeed())) === 0.5, [speedButtons, await page.evaluate(() => BLPR.api.getSpeed())]);
 	await page.evaluate(() => BLPR.api.setSpeed(1));
+
+	// FPS limit: the replayer's render loop draws at most the chosen number of frames a second.
+	// Headless software rendering only manages a few frames a second, so test with 1 fps.
+	const perfNow = () => page.evaluate(() => ({renders: BLPR.performance.renders, skipped: BLPR.performance.skipped, at: performance.now()}));
+	await page.evaluate(() => BLPR.patchSettings({playback: {fpsLimit: 1}}));
+	await sleep(1500);
+	const fps0 = await perfNow();
+	await sleep(4000);
+	const fps1 = await perfNow();
+	const drawnLimited = fps1.renders - fps0.renders;
+	const limitedSeconds = (fps1.at - fps0.at) / 1000;
+	check('FPS limit draws at most the chosen frames per second', drawnLimited >= 1 && drawnLimited <= Math.ceil(limitedSeconds) + 1 && fps1.skipped > fps0.skipped, [fps0, fps1]);
+	check('Performance section shows the frames actually drawn', await page.evaluate(() => /^Drawing \d+ frames per second$/.test((document.getElementById('blp-r-fps-now') || {}).textContent || '')));
+	await page.evaluate(() => BLPR.patchSettings({playback: {fpsLimit: 0}}));
+	await sleep(800);
+	const fps2 = await perfNow();
+	await page.waitForFunction(r => BLPR.performance.renders > r + 2, fps2.renders, {timeout: 10000}).catch(() => null);
+	const fps3 = await perfNow();
+	check('with no limit every frame is drawn again', fps3.skipped === fps2.skipped && fps3.renders > fps2.renders, [fps2, fps3]);
 
 	// Right-click menu + export
 	await page.mouse.move(600, 300);
