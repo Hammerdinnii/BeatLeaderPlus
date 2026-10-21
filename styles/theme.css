@@ -162,43 +162,94 @@
 }
 
 /* ---------------------------------------------------------------- dock */
+/* Placed by site-enhancements.js (layoutDock): along the edge it was dragged to, horizontal on the
+   top and bottom edges, vertical on the sides. --blp-dock-scale is the "dock size" setting. */
 .blp-dock {
+	--blp-dock-scale: 1;
 	position: fixed;
 	left: 50%;
 	bottom: 14px;
-	transform: translateX(-50%);
 	z-index: 2147483000;
 	display: flex;
 	align-items: center;
-	flex-wrap: wrap;
 	justify-content: center;
-	gap: 6px;
-	max-width: calc(100vw - 32px);
-	padding: 6px 10px;
+	gap: calc(6px * var(--blp-dock-scale));
+	box-sizing: border-box;
+	max-width: calc(100vw - 16px);
+	max-height: calc(100vh - 16px);
+	padding: calc(4px * var(--blp-dock-scale)) calc(6px * var(--blp-dock-scale));
 	border-radius: 999px;
 	background: color-mix(in srgb, var(--blpu-surface) 88%, transparent);
 	border: 1px solid var(--blpu-border);
 	box-shadow: var(--blpu-shadow);
 	backdrop-filter: blur(10px);
 	color: var(--blpu-text);
-	font: 500 12px/1.2 system-ui, sans-serif;
+	font: 500 calc(12px * var(--blp-dock-scale)) / 1.2 system-ui, sans-serif;
+	user-select: none;
 }
 
-.blp-dock:not(.blp-dock-open) {
-	padding: 3px 4px;
+.blp-dock[data-edge] {
+	bottom: auto;
+}
+
+/* The BL+ button keeps its place when the dock opens or closes (so a double-click lands on it):
+   the row holding it sits against the edge, and the other controls open away from it. */
+.blp-dock-h {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.blp-dock-h[data-edge='bottom'] {
+	flex-wrap: wrap-reverse;
+}
+
+.blp-dock-h.blp-dock-rev {
+	flex-direction: row-reverse;
+}
+
+.blp-dock-v {
+	flex-direction: column;
+	flex-wrap: nowrap;
+	align-items: stretch;
+	overflow-y: auto;
+	border-radius: calc(18px * var(--blp-dock-scale));
+}
+
+.blp-dock-v.blp-dock-rev {
+	flex-direction: column-reverse;
+}
+
+.blp-dock-v[data-edge='left'] .blp-dock-brand {
+	align-self: flex-start;
+}
+
+.blp-dock-v[data-edge='right'] .blp-dock-brand {
+	align-self: flex-end;
+}
+
+.blp-dock-dragging {
+	opacity: 0.85;
+	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.blp-dock-dragging,
+.blp-dock-dragging .blp-dock-brand {
+	cursor: grabbing;
 }
 
 .blp-dock-brand {
 	position: relative;
-	font: 800 13px/1 system-ui, sans-serif;
+	flex: none;
+	font: 800 calc(16px * var(--blp-dock-scale)) / 1 system-ui, sans-serif;
 	letter-spacing: 0.02em;
 	background: linear-gradient(90deg, var(--blpu-primary), var(--blpu-accent));
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
 	border: 0;
-	padding: 4px 6px;
+	padding: calc(7px * var(--blp-dock-scale)) calc(10px * var(--blp-dock-scale));
 	cursor: pointer;
+	touch-action: none;
 }
 
 .blp-dock-brand:focus-visible {
@@ -212,8 +263,8 @@
 	position: absolute;
 	top: 1px;
 	right: 0;
-	width: 6px;
-	height: 6px;
+	width: calc(7px * var(--blp-dock-scale));
+	height: calc(7px * var(--blp-dock-scale));
 	border-radius: 50%;
 	background: var(--blpu-primary);
 }
@@ -221,9 +272,26 @@
 .blp-dock-group {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding-left: 6px;
+	gap: calc(4px * var(--blp-dock-scale));
+	padding-left: calc(6px * var(--blp-dock-scale));
 	border-left: 1px solid var(--blpu-border);
+}
+
+.blp-dock-v .blp-dock-group {
+	flex-direction: column;
+	align-items: stretch;
+	padding: calc(6px * var(--blp-dock-scale)) 0 0;
+	border-left: 0;
+	border-top: 1px solid var(--blpu-border);
+}
+
+.blp-dock-v .blp-dock-label {
+	text-align: center;
+}
+
+.blp-dock .blp-chip {
+	font-size: calc(12px * var(--blp-dock-scale));
+	padding: calc(5px * var(--blp-dock-scale)) calc(10px * var(--blp-dock-scale));
 }
 
 .blp-dock-label {

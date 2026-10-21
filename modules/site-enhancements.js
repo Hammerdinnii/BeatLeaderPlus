@@ -53,6 +53,9 @@
 		compare: [],
 		filter: 'all',
 		dockOpen: false,
+		dockPos: {edge: 'bottom', pos: 0.5}, // the edge it sits on and where along it (0–1)
+		dockDragged: false,
+		dockBrand: null,
 		lastUrl: location.href,
 		scoreCache: new Map(),
 		badgeObserver: null,
@@ -238,14 +241,6 @@
 		}
 	}
 
-	function openEnhanced(parsed, e) {
-		const s = settings();
-		const url = U.buildEnhancedReplayUrl(parsed, s);
-		const newTab = s.site.enhancedReplay.newTab || e.ctrlKey || e.metaKey || e.button === 1;
-		if (newTab) BLP.send('openTab', {url, active: !(e.ctrlKey || e.metaKey)}).catch(() => window.open(url, '_blank'));
-		else location.href = url;
-	}
-
 	function processReplayLinks() {
 		const s = settings().site;
 		document.querySelectorAll('a[href*="replay.beatleader."]').forEach(a => {
@@ -266,7 +261,6 @@
 				const b = iconButton('fas fa-download', t('site.download'), () => downloadReplay(current(), b), 'blp-dl');
 				buttons.push(b);
 			}
-			if (s.enhancedReplayButton) buttons.push(iconButton('fas fa-magic', t('site.enhanced'), e => openEnhanced(current(), e), 'blp-enh'));
 			if (s.compare && parsed.scoreId) {
 				const b = iconButton('fas fa-balance-scale', t('site.compare'), () => toggleCompare(current().scoreId), 'blp-cmp');
 				b.dataset.scoreId = parsed.scoreId;
@@ -618,7 +612,7 @@
 			{class: 'blp-row-actions'},
 			scores.map(s =>
 				s && s.id
-					? h('a', {class: 'blp-btn', href: U.buildEnhancedReplayUrl({scoreId: s.id}, settings()), target: '_blank', rel: 'noopener'}, h('i', {class: 'fas fa-magic', 'aria-hidden': 'true'}), ' ' + ((s.player && s.player.name) || s.id))
+					? h('a', {class: 'blp-btn', href: U.replayUrl({scoreId: s.id}), target: '_blank', rel: 'noopener'}, h('i', {class: 'fas fa-play', 'aria-hidden': 'true'}), ' ' + ((s.player && s.player.name) || s.id))
 					: null
 			),
 			h(
@@ -648,6 +642,116 @@
 			document.body.appendChild(dock);
 		}
 		return dock;
+	}
+
+	/* ------------------------------------------------------------------ dock position (drag to move) */
+
+	const DOCK_EDGES = ['top', 'bottom', 'left', 'right'];
+	const DOCK_MARGIN = 8;
+	const DOCK_GAP = 14; // distance from the edge it sits on
+
+	const viewport = () => ({w: document.documentElement.clientWidth || window.innerWidth, h: window.innerHeight});
+
+	function cleanDockPos(p) {
+		const edge = p && DOCK_EDGES.includes(p.edge) ? p.edge : 'bottom';
+		const pos = p && isFinite(p.pos) ? U.clamp(Number(p.pos), 0, 1) : 0.5;
+		return {edge, pos};
+	}
+
+	/** The nearest edge to a point, and how far along that edge it is. */
+	function dockPosAt(x, y) {
+		const {w, h: hgt} = viewport();
+		const dist = {left: x, right: w - x, top: y, bottom: hgt - y};
+		const edge = DOCK_EDGES.reduce((a, b) => (dist[b] < dist[a] ? b : a));
+		const vertical = edge === 'left' || edge === 'right';
+		return {edge, pos: U.clamp(vertical ? y / hgt : x / w, 0, 1)};
+	}
+
+	/**
+	 * Vertical along the left and right edges, horizontal along the top and bottom, so the open dock
+	 * runs along the edge instead of across the page. The BL+ button stays where it was put and the
+	 * other controls open towards the middle of the window.
+	 */
+	function setDockOrientation(dock, p) {
+		const vertical = p.edge === 'left' || p.edge === 'right';
+		dock.classList.toggle('blp-dock-v', vertical);
+		dock.classList.toggle('blp-dock-h', !vertical);
+		dock.classList.toggle('blp-dock-rev', p.pos > 0.5);
+		dock.dataset.edge = p.edge;
+	}
+
+	/** Offset of the BL+ button's centre inside the dock. */
+	function brandCenter(dock) {
+		const r = dock.getBoundingClientRect();
+		const brand = dock.querySelector('.blp-dock-brand');
+		const b = brand ? brand.getBoundingClientRect() : r;
+		return {x: b.left - r.left + b.width / 2, y: b.top - r.top + b.height / 2, w: r.width, h: r.height};
+	}
+
+	function placeDock(dock, left, top, size) {
+		const {w, h: hgt} = viewport();
+		dock.style.left = Math.round(U.clamp(left, DOCK_MARGIN, Math.max(DOCK_MARGIN, w - size.w - DOCK_MARGIN))) + 'px';
+		dock.style.top = Math.round(U.clamp(top, DOCK_MARGIN, Math.max(DOCK_MARGIN, hgt - size.h - DOCK_MARGIN))) + 'px';
+	}
+
+	function layoutDock(dock) {
+		if (!dock || !dock.isConnected) return;
+		const p = state.dockPos;
+		const {w, h: hgt} = viewport();
+		setDockOrientation(dock, p);
+		dock.style.left = '0px'; // measure at the origin, where nothing squeezes it
+		dock.style.top = '0px';
+		const c = brandCenter(dock);
+		if (p.edge === 'top' || p.edge === 'bottom') placeDock(dock, p.pos * w - c.x, p.edge === 'top' ? DOCK_GAP : hgt - c.h - DOCK_GAP, c);
+		else placeDock(dock, p.edge === 'left' ? DOCK_GAP : w - c.w - DOCK_GAP, p.pos * hgt - c.y, c);
+	}
+
+	function saveDockPos() {
+		storage.updateLocal(D.KEYS.siteUi, {}, ui => Object.assign(ui, {dock: state.dockPos})).catch(() => {});
+	}
+
+	function startDockDrag(e) {
+		if (e.button !== 0) return;
+		const dock = document.getElementById('blp-dock');
+		if (!dock) return;
+		const start = {x: e.clientX, y: e.clientY};
+		const c0 = brandCenter(dock);
+		const r0 = dock.getBoundingClientRect();
+		const grab = {x: start.x - (r0.left + c0.x), y: start.y - (r0.top + c0.y)}; // pointer vs. button centre
+		let dragging = false;
+		const move = ev => {
+			if (!dragging) {
+				if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
+				dragging = true;
+				dock.classList.add('blp-dock-dragging');
+			}
+			ev.preventDefault();
+			// Follow the pointer, switching between vertical and horizontal as it nears another edge.
+			setDockOrientation(dock, dockPosAt(ev.clientX, ev.clientY));
+			const c = brandCenter(dock);
+			placeDock(dock, ev.clientX - grab.x - c.x, ev.clientY - grab.y - c.y, c);
+		};
+		const end = ev => {
+			window.removeEventListener('pointermove', move, true);
+			window.removeEventListener('pointerup', end, true);
+			window.removeEventListener('pointercancel', end, true);
+			if (!dragging) return;
+			dock.classList.remove('blp-dock-dragging');
+			state.dockPos = dockPosAt(ev.clientX, ev.clientY);
+			state.dockDragged = true; // the click that ends a drag doesn't open or close the dock
+			setTimeout(() => (state.dockDragged = false), 0);
+			layoutDock(dock);
+			saveDockPos();
+		};
+		window.addEventListener('pointermove', move, true);
+		window.addEventListener('pointerup', end, true);
+		window.addEventListener('pointercancel', end, true);
+	}
+
+	function resetDockPos() {
+		state.dockPos = cleanDockPos(null);
+		layoutDock(document.getElementById('blp-dock'));
+		saveDockPos();
 	}
 
 	function profileNameGuess() {
@@ -765,24 +869,32 @@
 		// Collapsed to the BL+ button until clicked. A dot marks an active filter or comparison.
 		const busy = state.filter !== 'all' || state.compare.length > 0;
 		dock.classList.toggle('blp-dock-open', state.dockOpen);
-		dock.appendChild(
+		dock.style.setProperty('--blp-dock-scale', U.clamp(Number(s.dockSize) || 100, 60, 200) / 100);
+		// The same button every time, so it keeps keyboard focus and double-clicks reach it.
+		const brand = (state.dockBrand =
+			state.dockBrand ||
 			h(
 				'button',
 				{
 					class: 'blp-dock-brand',
 					type: 'button',
-					title: t('site.dockToggle'),
-					'aria-expanded': String(state.dockOpen),
+					onpointerdown: startDockDrag,
+					ondblclick: resetDockPos,
 					onclick: () => {
+						if (state.dockDragged) return;
 						state.dockOpen = !state.dockOpen;
 						renderDock();
 					},
 				},
 				'BL+',
-				busy && !state.dockOpen ? h('span', {class: 'blp-dock-dot'}) : null
-			)
-		);
+				h('span', {class: 'blp-dock-dot'})
+			));
+		brand.title = t('site.dockToggle');
+		brand.setAttribute('aria-expanded', String(state.dockOpen));
+		brand.querySelector('.blp-dock-dot').hidden = !(busy && !state.dockOpen);
+		dock.appendChild(brand);
 		if (state.dockOpen) items.forEach(i => dock.appendChild(i));
+		layoutDock(dock);
 	}
 
 	/* ------------------------------------------------------------------ pagination (hotkeys) */
@@ -847,7 +959,13 @@
 		async start() {
 			if (state.started) return;
 			state.started = true;
-			await Promise.all([loadFavorites(), loadFollowed()]);
+			await Promise.all([loadFavorites(), loadFollowed(), storage.getLocal(D.KEYS.siteUi, {}).then(ui => (state.dockPos = cleanDockPos(ui && ui.dock)))]);
+			// Moved in another tab: follow it here too.
+			storage.onLocalChanged(D.KEYS.siteUi, ui => {
+				state.dockPos = cleanDockPos(ui && ui.dock);
+				layoutDock(document.getElementById('blp-dock'));
+			});
+			window.addEventListener('resize', U.debounce(() => layoutDock(document.getElementById('blp-dock')), 100));
 			storage.onLocalChanged(D.KEYS.favorites, async () => {
 				await loadFavorites();
 				refreshStars();
