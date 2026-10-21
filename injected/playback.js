@@ -31,8 +31,7 @@
 		lastKnownSpeed: null,
 		restoredFor: null,
 		tl: null,
-		officialSlow: false,
-		officialSlowOffAt: 0,
+		lastSlowSetting: null,
 	};
 
 	const cfg = () => R.settings.playback;
@@ -233,23 +232,35 @@
 	}
 
 	/**
-	 * Low-accuracy cuts only add to the replayer's own "Change speed around mistakes", so turning
-	 * the BL+ option on turns that on too, and turning it off in the replayer's Playback tab turns
-	 * the BL+ option off.
+	 * "Also slow down on low-accuracy cuts" and the replayer's own "Change speed around mistakes"
+	 * work as one switch: turning either one on or off does the same to the other.
+	 *
+	 * `changed` names the side that just changed ('ours' or 'official'). Otherwise (page load, or
+	 * a change made while no replay was open, e.g. on the options page) the value both last
+	 * agreed on (runtime slowLinked) shows which side moved since; with no record yet, the
+	 * replayer's own setting is kept.
 	 */
-	function syncOfficialSlowMo() {
-		if (!R.active() || !cfg().slowOnLowAcc || officialSlowMoOn()) return;
-		if (Date.now() - pb.officialSlowOffAt < 3000) return; // just turned off there; ours follows
-		R.official.set('autoSpeedControls', true);
+	function linkSlowMo(changed) {
+		if (!R.active()) return;
+		const ours = !!cfg().slowOnLowAcc;
+		const official = officialSlowMoOn();
+		let value = official;
+		if (ours !== official) {
+			const agreed = R.runtime.slowLinked;
+			const oursMoved = changed === 'ours' || (changed !== 'official' && typeof agreed === 'boolean' && ours !== agreed);
+			value = oursMoved ? ours : official;
+			if (oursMoved) R.official.set('autoSpeedControls', ours);
+			else R.setPath('playback.slowOnLowAcc', official);
+		}
+		if (R.runtime.slowLinked !== value) R.setRuntime('slowLinked', value);
 	}
 
-	function onOfficialSettings(s) {
-		const on = !!s.autoSpeedControls;
-		if (pb.officialSlow && !on && cfg().slowOnLowAcc && R.active()) {
-			pb.officialSlowOffAt = Date.now();
-			R.setPath('playback.slowOnLowAcc', false);
-		}
-		pb.officialSlow = on;
+	/** Called on every settings update: only a change of the BL+ switch itself counts as ours. */
+	function onOwnSettings() {
+		const ours = !!cfg().slowOnLowAcc;
+		const changed = pb.lastSlowSetting !== null && ours !== pb.lastSlowSetting;
+		pb.lastSlowSetting = ours;
+		linkSlowMo(changed ? 'ours' : null);
 	}
 
 	/* ------------------------------------------------------------------ pause at mistakes */
@@ -388,7 +399,7 @@
 		body.appendChild(
 			ui.toggle(t('f.playback.slowOnLowAcc'), s.slowOnLowAcc, v => {
 				R.setPath('playback.slowOnLowAcc', v);
-				if (v) R.official.set('autoSpeedControls', true);
+				R.official.set('autoSpeedControls', v); // the same switch as the replayer's own
 			})
 		);
 		if (s.slowOnLowAcc) {
@@ -465,16 +476,15 @@
 		},
 		onReady() {
 			pb.lastKnownSpeed = R.api.getSpeed();
-			pb.officialSlow = officialSlowMoOn();
-			R.official.onChange(onOfficialSettings);
-			syncOfficialSlowMo();
+			R.official.onChange(() => linkSlowMo('official'));
+			onOwnSettings();
 			hookOfficialSlowMo();
 			if (R.api.isPlaying()) restoreSpeedAndJd();
 		},
 		onSettings() {
 			if (!ctx) return;
 			if (!R.active()) stopReverse();
-			syncOfficialSlowMo();
+			onOwnSettings();
 			hookOfficialSlowMo();
 			drawTimeline();
 		},
