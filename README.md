@@ -1,4 +1,6 @@
-# BeatLeaderPlus
+<p align="center">
+	<img src=".github/banner.png" alt="BeatLeaderPlus" width="100%">
+</p>
 
 A Chrome extension that adds more options to the [BeatLeader](https://beatleader.com) website and its web replay viewer. In the replayer it adds to the menus that are already there instead of adding a second interface.
 
