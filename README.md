@@ -50,7 +50,7 @@ Requires Chrome 111 or newer (or another Chromium-based browser).
 | **Camera → BL+** tab | Free camera tuning, orbit/follow options, the preset list and camera path tools |
 | **Right-click menu** | "Copy URL with BL+ camera and colors", "Screenshot" and "Record clip", next to the official "Copy URL" entries |
 | **Score HUD** (3D) | A PP estimate line under the accuracy, and an optional last-cut line, in the HUD's own font. Both follow the replayer's "Show HUD" setting. |
-| **Timeline** | An accuracy graph, bookmark flags and the A-B loop region |
+| **Timeline** | Bookmark flags and the A-B loop region, next to the replayer's own accuracy graph and mistake markers |
 
 Everything the replayer already offers stays where it is: saber colors, saber width, trail type and length, environment colors, lasers/floor/lights, headset opacity, the score HUD, "change speed around mistakes", the hitsound file and volume, and the FPV camera.
 
@@ -82,7 +82,7 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 - **Bookmarks with notes** (`B` to add, `Shift+B` to jump to the next one). They're saved per replay, shown on the timeline and listed in Settings → BL+ and on the options page.
 - **Low-accuracy cuts in the official slow motion**: when the replayer's "change speed around mistakes" is on, cuts below a score threshold get the same slow-down windows as misses and bad cuts.
 - **Remember speed and jump distance** across sessions (whatever you set with the replayer's own controls).
-- **Accuracy graph above the timeline**, with bookmark flags and the loop region.
+- **Bookmark flags and the loop region on the timeline**, alongside the replayer's own accuracy graph and markers.
 
 ### Replay viewer: HUD and interface
 
@@ -193,8 +193,7 @@ injected/
                          items, controls in the replayer's style, hiding replayer elements
   camera.js              official free camera tuning, orbit/follow, presets, paths, URL params
   visuals.js             note/trail colors, saber styles, models, effects, visibility, heat
-  playback.js            stepping, reverse, loop, bookmarks, low-acc slow-mo, speed/JD memory,
-                         timeline graph
+  playback.js            stepping, reverse, loop, bookmarks, low-acc slow-mo, speed/JD memory
   hud.js                 PP estimate and last-cut lines in the replayer's score HUD
   audio.js               extra hitsounds: synthesis, pack decoding, look-ahead scheduling
   export.js              share links, screenshots, clip recording
@@ -250,7 +249,7 @@ There is no build step: edit the files and reload the extension.
 - **New setting:** add the default in `lib/defaults.js`, a field in `lib/schema.js` and its label (`f.<path>`) in `lib/i18n.js`. Then read it where the feature lives. The options page and popup pick it up automatically.
 - **New replay feature:** create `injected/my-feature.js` that calls `BLPR.register({name, init(ctx), onSettings(s), onReplay(info), tick(frame), maintain()})`. Put its controls in the replayer's menus with `BLPR.ui.addSettingsSection`, `BLPR.ui.addCameraSection` or `BLPR.ui.addMenuItem`. Add the file to the `FILES` list in `modules/replay-bridge.js` (before `injected-replay.js`). The modules shipped with BeatLeaderPlus are good examples.
 - **New language:** add a table to `STRINGS` in `lib/i18n.js` (missing keys fall back to English) and an option in the language select in `lib/schema.js`.
-- **Tests:** `tests/e2e/run-tests.js` drives the extension in Chromium against a mock replayer and a mock leaderboard page. See [tests/README.md](tests/README.md).
+- **Tests:** `tests/e2e/run-tests.js` drives the extension in Chromium against the real BeatLeader web replayer (built unmodified from its repository) and a small leaderboard page. See [tests/README.md](tests/README.md).
 - Use tabs, single quotes and short comments that explain *why*, and avoid external dependencies.
 
 ### Known limitations

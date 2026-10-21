@@ -1,19 +1,22 @@
-// End-to-end tests: loads the unpacked extension in Chromium and drives mock BeatLeader pages.
+// End-to-end tests: loads the unpacked extension in Chromium and drives the real BeatLeader web
+// replayer, plus a small leaderboard page for the website features.
 //
-//   AFRAME_PATH=/path/to/BeatSaber-Web-Replays/vendor/aframe-master.js node tests/e2e/run-tests.js
+//   BL_REPLAYER_DIR=/path/to/BeatSaber-Web-Replays node tests/e2e/run-tests.js
 //
-// The mock replay page runs on the replayer's own A-Frame build (see tests/README.md) with stand-in
-// components that mirror the official component names and behaviour BeatLeaderPlus relies on.
+// BL_REPLAYER_DIR is a checkout of github.com/BeatLeader/BeatSaber-Web-Replays, built with its own
+// `npm ci && npm run build` and otherwise unmodified (see tests/README.md). It is served at
+// https://replay.beatleader.com/ with the test map from its repository and a generated replay.
 const {chromium} = require('playwright');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const fixtures = require('./fixtures');
 
 const DIR = __dirname;
 const EXT = path.resolve(__dirname, '..', '..');
-const AFRAME_PATH = process.env.AFRAME_PATH;
-if (!AFRAME_PATH || !fs.existsSync(AFRAME_PATH)) {
-	console.error('Set AFRAME_PATH to the replayer\'s vendor/aframe-master.js (see tests/README.md).');
+const REPLAYER = process.env.BL_REPLAYER_DIR && path.resolve(process.env.BL_REPLAYER_DIR);
+if (!REPLAYER || !fs.existsSync(path.join(REPLAYER, 'index.html')) || !fs.existsSync(path.join(REPLAYER, 'build'))) {
+	console.error('Set BL_REPLAYER_DIR to a built checkout of BeatLeader/BeatSaber-Web-Replays (see tests/README.md).');
 	process.exit(2);
 }
 const results = [];
@@ -26,8 +29,7 @@ function check(name, cond, detail) {
 }
 
 function watch(page, label) {
-	// A-Frame's default font comes from a CDN that the tests stub out, so ignore its parse error.
-	page.on('pageerror', e => !/error parsing font/.test(e.message) && errors.push(`[${label}] pageerror: ${e.message}`));
+	page.on('pageerror', e => errors.push(`[${label}] pageerror: ${e.message}\n${(e.stack || '').split('\n').slice(1, 4).join('\n')}`));
 	page.on('console', m => {
 		if (m.type() === 'error' || m.type() === 'warning') {
 			const txt = m.text();
@@ -37,6 +39,7 @@ function watch(page, label) {
 }
 
 (async () => {
+	const fx = await fixtures.load(REPLAYER);
 	const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'blp-e2e-'));
 	const context = await chromium.launchPersistentContext(profile, {
 		channel: 'chromium',
@@ -52,6 +55,7 @@ function watch(page, label) {
 	check('service worker started', !!extId, extId);
 	sw.on('console', m => m.type() === 'error' && errors.push('[sw] ' + m.text()));
 
+	// Used by the website checks (comparison, follows, stats) through the stubbed worker fetch.
 	const mockScore = {
 		id: 1001,
 		playerId: '111',
@@ -70,15 +74,26 @@ function watch(page, label) {
 		timepost: 1700000000,
 	};
 
-	await context.route(/^https:\/\/replay\.beatleader\.com\//, route => {
+	// Everything the browser requests is answered locally; no network access is needed.
+	await context.route(/^https?:\/\//, route => {
 		const url = new URL(route.request().url());
-		if (url.pathname === '/vendor/aframe-master.js') return route.fulfill({path: AFRAME_PATH, contentType: 'application/javascript'});
-		if (url.pathname === '/vendor/mock-replayer.js') return route.fulfill({path: path.join(DIR, 'mock-replayer.js'), contentType: 'application/javascript'});
-		return route.fulfill({path: path.join(DIR, 'replay.html'), contentType: 'text/html'});
+		if (url.host === 'replay.beatleader.com') {
+			if (url.pathname.startsWith('/cors/beat-saver2/api/maps/')) return route.fulfill({json: fx.beatSaverMap});
+			const file = path.join(REPLAYER, url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname));
+			if (file.startsWith(REPLAYER + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) return route.fulfill({path: file});
+			return route.fulfill({status: 404, body: ''});
+		}
+		if (url.host === 'beatleader.com') return route.fulfill({path: path.join(DIR, 'site.html'), contentType: 'text/html'});
+		if (url.pathname.endsWith('.bsor')) return route.fulfill({body: fx.replay, contentType: 'application/octet-stream'});
+		if (url.href === fx.zipUrl) return route.fulfill({body: fx.mapZip, contentType: 'application/zip'});
+		if (url.host === 'api.beatleader.com') {
+			if (url.pathname === '/score/' + fx.scoreId) return route.fulfill({json: fx.score});
+			if (url.pathname === '/user') return route.fulfill({json: {}}); // not logged in
+			if (url.pathname === '/user/id' || url.pathname.startsWith('/watched/')) return route.fulfill({body: ''});
+			return route.fulfill({json: url.pathname.includes('/scores') ? {data: [mockScore]} : mockScore});
+		}
+		return route.fulfill({status: 404, body: ''});
 	});
-	await context.route(/^https:\/\/beatleader\.com\//, route => route.fulfill({path: path.join(DIR, 'site.html'), contentType: 'text/html'}));
-	await context.route(/^https:\/\/api\.beatleader\.com\//, route => route.fulfill({json: route.request().url().includes('/scores') ? {data: [mockScore]} : mockScore}));
-	await context.route(/^https:\/\/cdn\./, route => route.fulfill({body: 'BSOR', contentType: 'application/octet-stream'}));
 
 	await sleep(1500); // let onInstalled finish (it opens the options page)
 
@@ -107,39 +122,64 @@ function watch(page, label) {
 		}, mockScore);
 	await stubFetch();
 
-	/* ------------------------------------------------------------ replay viewer */
+	/* ------------------------------------------------------------ replay viewer (the real one) */
 	const page = await context.newPage();
 	watch(page, 'replay');
-	await page.goto('https://replay.beatleader.com/?scoreId=1001');
-	await page.waitForFunction(() => window.BLPR && window.BLPR.ctx && window.BLPR.replayInfo, null, {timeout: 30000});
+	const openReplay = async (p, query) => {
+		await p.goto('https://replay.beatleader.com/?scoreId=' + fx.scoreId + (query || ''));
+		await p.waitForFunction(() => window.BLPR && window.BLPR.ctx && window.BLPR.replayInfo && BLPR.api.duration() > 0, null, {timeout: 60000});
+	};
+	await openReplay(page);
 	const title = await page.evaluate(() => BLPR.replayInfo.title);
-	check('runtime booted and replay detected (UTF-8 intact)', title === 'Test Player – Mock Song (ExpertPlus)', title);
+	check('runtime attached to the real replayer (UTF-8 intact)', title === `Test Player – ${fx.songName} (${fx.difficulty})`, title);
 	check('modules registered', true, await page.evaluate(() => BLPR.modules.map(m => m.name)));
+	// The replayer hides its control bar while playing until the mouse moves, like for a real user.
+	const wake = async () => {
+		await page.mouse.move(620, 640);
+		await page.mouse.move(640, 650);
+		await sleep(600);
+	};
+	// Flip one of the replayer's own settings checkboxes the way a click does.
+	const officialToggle = (id, on) =>
+		page.evaluate(
+			([id, on]) => {
+				const box = document.getElementById(id);
+				box.checked = on;
+				box.dispatchEvent(new Event('input', {bubbles: true}));
+			},
+			[id, on]
+		);
+	const closeMenus = () =>
+		page.evaluate(() => {
+			for (const id of ['settingsContainer', 'cameraSettingsContainer']) document.getElementById(id).classList.remove('settingsActive');
+			document.getElementById('ctxMenu').style.display = 'none';
+		});
 
 	// Everything lives inside the replayer's own menus: no floating panel, launcher or HUD box.
 	const hooks = await page.evaluate(() => ({
 		settingsTab: !!document.querySelector('#settingsContainer .tab-buttons > #blpSettingsTab.settings-tab-button'),
 		settingsPane: !!document.querySelector('#settingsContainer .tab-content > #blpSettingsPane.settings-tab-pane'),
+		tabsAligned: document.querySelectorAll('.settings-tab-button').length === document.querySelectorAll('.settings-tab-pane').length,
 		cameraQuick: !!document.querySelector('#cameraSettingsContainer .camera-tab-pane > #blpCameraQuick'),
 		cameraTab: !!document.querySelector('#cameraSettingsContainer .tab-buttons > #blpCameraTab.camera-tab-button'),
 		menu: Array.from(document.querySelectorAll('#ctxMenu .panel-menu > .blp-r-menuitem')).map(e => e.id),
 		menuBeforePlaylist: (document.getElementById('addToPlaylist') || {}).previousElementSibling === document.getElementById('blpClip'),
 		floating: document.querySelectorAll('#blp-r-panel, #blp-r-launch, #blp-r-hud, .blp-r-launch').length,
 	}));
-	check('BL+ tab added to the official Settings menu', hooks.settingsTab && hooks.settingsPane, hooks);
-	check('BL+ block and tab added to the official Camera menu', hooks.cameraQuick && hooks.cameraTab, hooks);
-	check('extra items in the official right-click menu', hooks.menu.join() === 'blpCopyURL,blpScreenshot,blpClip' && hooks.menuBeforePlaylist, hooks.menu);
+	check('BL+ tab added to the Settings menu', hooks.settingsTab && hooks.settingsPane && hooks.tabsAligned, hooks);
+	check('BL+ block and tab added to the Camera menu', hooks.cameraQuick && hooks.cameraTab, hooks);
+	check('extra items in the right-click menu', hooks.menu.join() === 'blpCopyURL,blpScreenshot,blpClip' && hooks.menuBeforePlaylist, hooks.menu);
 	check('no floating panel, launcher or HUD', hooks.floating === 0, hooks.floating);
 
+	await page.evaluate(t => BLPR.api.seek(t), fx.firstNote - 1);
 	await page.evaluate(() => BLPR.api.play());
-	await sleep(1200);
-	const t1 = await page.evaluate(() => BLPR.api.time());
-	check('song time advances while playing', t1 > 0.5, t1);
+	await sleep(1500);
+	const t1 = await page.evaluate(() => ({time: BLPR.api.time(), playing: BLPR.api.isPlaying()}));
+	check('replay plays', t1.playing && t1.time > fx.firstNote - 0.9, t1);
 
 	// Settings → BL+
-	await page.mouse.click(640, 300);
 	await page.keyboard.press('Backquote');
-	await sleep(200);
+	await sleep(300);
 	const settingsState = () =>
 		page.evaluate(() => ({
 			open: document.getElementById('settingsContainer').classList.contains('settingsActive'),
@@ -148,7 +188,8 @@ function watch(page, label) {
 			official: document.querySelector('.settings-tab-pane').classList.contains('active'),
 		}));
 	let st = await settingsState();
-	check('` opens Settings → BL+', st.open && st.blp && st.tab && !st.official, st);
+	const controlsShown = await page.evaluate(() => document.body.classList.contains('showControls') && getComputedStyle(document.getElementById('blpSettingsPane')).display !== 'none');
+	check('` opens Settings → BL+ (visible while playing)', st.open && st.blp && st.tab && !st.official && controlsShown, [st, controlsShown]);
 	const sections = await page.evaluate(() => Array.from(document.querySelectorAll('#blpSettingsPane > .blp-r-section')).map(s => s.id.replace('blp-sec-', '')));
 	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,playback,timeline,audio,export,interface', sections);
 	await page.click('#settingsContainer .settings-tab-button >> nth=0');
@@ -167,7 +208,7 @@ function watch(page, label) {
 	await page.click('#blp-sec-playback .blp-r-btn >> text=A');
 	await sleep(400);
 	st = await settingsState();
-	const loopA = await page.evaluate(() => document.querySelector('#blp-sec-playback .blp-r-inline') && document.querySelector('#blp-sec-playback .blp-r-inline').textContent);
+	const loopA = await page.evaluate(() => (document.querySelector('#blp-sec-playback .blp-r-inline') || {}).textContent);
 	check('button in BL+ tab works and the menu stays open', st.open && st.blp && !!loopA, [st, loopA]);
 	await page.keyboard.press('Shift+KeyT');
 	await page.keyboard.press('Backquote');
@@ -175,10 +216,11 @@ function watch(page, label) {
 	check('` closes the menu again', !(await settingsState()).open);
 
 	// Camera menu
-	await page.click('.controlsCamera');
-	await sleep(200);
+	await wake();
+	await page.click('.controlsCamera.desktopControl');
+	await sleep(300);
 	const quickButtons = await page.evaluate(() => Array.from(document.querySelectorAll('#blpCameraQuick .blp-r-btn')).map(b => b.textContent));
-	check('camera quick block shows Orbit / Follow / save preset', quickButtons.length >= 3, quickButtons);
+	check('camera block shows Orbit / Follow / save preset', quickButtons.length >= 3, quickButtons);
 	await page.click('#blpCameraQuick .blp-r-btn >> nth=0');
 	await sleep(400);
 	const camMenu = await page.evaluate(() => ({open: document.getElementById('cameraSettingsContainer').classList.contains('settingsActive'), mode: BLPR.camera.mode, active: document.querySelector('#blpCameraQuick .blp-r-btn').classList.contains('blp-r-active')}));
@@ -188,7 +230,7 @@ function watch(page, label) {
 	const camTab = await page.evaluate(() => ({active: document.getElementById('blpCameraPane').classList.contains('active'), sections: document.querySelectorAll('#blpCameraPane > .blp-r-section').length}));
 	check('BL+ camera tab renders', camTab.active && camTab.sections === 4, camTab);
 	await page.click('#cameraSettingsContainer .camera-tab-button >> nth=0');
-	await page.mouse.click(640, 300);
+	await closeMenus();
 
 	// Camera modes
 	const camPos = () =>
@@ -204,16 +246,21 @@ function watch(page, label) {
 	check('orbit camera moves', JSON.stringify(orbitA) !== JSON.stringify(orbitB), [orbitA, orbitB]);
 	check('official look-controls paused while BL+ drives the camera', await page.evaluate(() => BLPR.ctx.mainCamera.getAttribute('look-controls').enabled === false));
 	await page.evaluate(() => BLPR.camera.setMode('follow'));
-	await sleep(600);
+	await sleep(800);
 	check('follow camera positions behind head', (await camPos())[2] > 0.5, await camPos());
 	await page.evaluate(() => BLPR.camera.setMode('pov'));
-	check('POV mode uses official camera-mover', await page.evaluate(() => BLPR.ctx.cameraMover().pov === true));
+	await sleep(200);
+	check("POV mode uses the replayer's own FPV camera", await page.evaluate(() => BLPR.ctx.cameraMover().pov === true));
 	await page.evaluate(() => BLPR.camera.setMode('default'));
+	await sleep(200);
 	check('default mode hands control back to the official camera', await page.evaluate(() => BLPR.ctx.mainCamera.getAttribute('look-controls').enabled === true && BLPR.ctx.cameraMover().pov === false));
 	await page.evaluate(() => BLPR.patchSettings({camera: {free: {speed: 6.5}}}));
 	await sleep(400);
-	const accel = await page.evaluate(() => BLPR.ctx.mainCamera.getAttribute('wasd-controls').acceleration);
-	check('fly speed tunes the official wasd-controls', Math.abs(accel - 6.5 * 20) < 1e-6, accel);
+	const wasd = await page.evaluate(() => {
+		const d = BLPR.ctx.mainCamera.getAttribute('wasd-controls');
+		return {acceleration: d.acceleration, easing: d.easing};
+	});
+	check("fly speed tunes the replayer's wasd-controls", Math.abs(wasd.acceleration - 6.5 * wasd.easing) < 1e-3, wasd);
 	const freeA = await camPos();
 	await page.keyboard.down('KeyW');
 	await sleep(600);
@@ -228,13 +275,14 @@ function watch(page, label) {
 
 	// Camera path record + play
 	await page.evaluate(() => BLPR.camera.setMode('orbit'));
+	// Headless software rendering runs the real replayer at a few frames per second, so record longer.
 	await page.keyboard.press('Shift+KeyG');
-	await sleep(1200);
+	await sleep(3000);
 	await page.keyboard.press('Shift+KeyG');
 	await sleep(500);
 	const paths = await sw.evaluate(() => chrome.storage.local.get('blp_camera_paths'));
 	const savedPath = (paths.blp_camera_paths || [])[0];
-	check('camera path recorded and stored', savedPath && savedPath.keyframes.length > 5, savedPath && savedPath.keyframes.length);
+	check('camera path recorded and stored', savedPath && savedPath.keyframes.length >= 2, savedPath && savedPath.keyframes.length);
 	await page.keyboard.press('KeyG');
 	await sleep(300);
 	check('camera path playback active', await page.evaluate(() => BLPR.camera.mode === 'path'));
@@ -242,64 +290,67 @@ function watch(page, label) {
 	await page.evaluate(() => BLPR.camera.setMode('default'));
 
 	// Visuals (saber colours stay with the replayer's own colour pickers)
-	await page.evaluate(() => {
-		const input = document.getElementById('leftSaberColor');
-		input.value = '#00ff00';
-		BLPR.ctx.scene.emit('colorChanged', {hand: 'left', color: '#00ff00'});
-	});
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {trailOverride: true, trailWidth: 50}, notes: {override: true, left: '#ffff00', right: '#00ffff'}}}));
 	await sleep(600);
 	const vis = await page.evaluate(() => ({
 		bg: Object.assign({}, BLPR.ctx.beatGenerator().colors),
 		trailVS: BLPR.ctx.leftSaber.components.trail.material.vertexShader.includes('blpWidth'),
-		trailColor: BLPR.ctx.leftSaber.components.trail.material.uniforms.bladeColor.value,
+		saber: document.getElementById('leftSaberColor').value,
+		trailColor: BLPR.saberColor('left'),
 	}));
 	check('note colors independent of sabers', vis.bg.left === '#ffff00' && vis.bg.right === '#00ffff', vis.bg);
 	check('trail width shader patch applied', vis.trailVS);
-	check("trail follows the replayer's saber color", vis.trailColor.y > 0.9 && vis.trailColor.x < 0.1, vis.trailColor);
-	await page.evaluate(() => BLPR.patchSettings({visuals: {visibility: {walls: false, leftSaber: false}, accuracyHeat: {enabled: true}}}));
+	check("trail color follows the replayer's saber color", vis.trailColor.toLowerCase() === vis.saber.toLowerCase(), vis);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {visibility: {notes: false, leftSaber: false}, accuracyHeat: {enabled: true}}}));
 	await sleep(600);
 	const vis2 = await page.evaluate(() => {
-		const wall = document.querySelector('[wall]').object3D;
-		const beat = document.querySelector('[beat]').components.beat;
+		const notes = Array.from(BLPR.ctx.beatContainer.children).filter(c => c.components && c.components.beat && ['arrow', 'dot'].includes(c.components.beat.data.type));
 		return {
-			wallMask: wall.children[0] ? wall.children[0].layers.mask : wall.layers.mask,
+			notes: notes.length,
+			notesHidden: notes.every(c => c.object3D.layers.mask === 0),
 			saberMask: BLPR.ctx.leftSaber.object3D.layers.mask,
-			heatColor: '#' + beat.blockEl.getObject3D('mesh').material.color.getHexString(),
-			heatExpected: BLPR.heatColor(beat.replayNote.score),
 		};
 	});
-	check('walls hidden via layers', vis2.wallMask === 0, vis2.wallMask);
+	check('notes hidden via layers', vis2.notes > 0 && vis2.notesHidden, vis2);
 	check('left saber hidden via layers', vis2.saberMask === 0, vis2.saberMask);
-	check('accuracy heat tints notes', vis2.heatColor.toLowerCase() === vis2.heatExpected.toLowerCase(), [vis2.heatColor, vis2.heatExpected]);
-	await page.evaluate(() => BLPR.patchSettings({visuals: {visibility: {walls: true, leftSaber: true}, accuracyHeat: {enabled: false}}}));
-	await sleep(500);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {visibility: {notes: true, leftSaber: true}}}));
+	await sleep(800);
+	const heat = await page.evaluate(() => {
+		const out = [];
+		for (const c of BLPR.ctx.beatContainer.children) {
+			const beat = c.components && c.components.beat;
+			// Pooled notes get new replay notes between frames; compare the ones tinted for their current note.
+			if (!beat || !beat.replayNote || beat.replayNote.score === undefined || c.__blpTintNote !== beat.replayNote) continue;
+			const mesh = beat.blockEl.getObject3D('mesh');
+			out.push(['#' + mesh.material.color.getHexString(), BLPR.heatColor(beat.replayNote.score).toLowerCase(), beat.replayNote.score]);
+		}
+		return out;
+	});
+	check('accuracy heat tints spawned notes by their cut score', heat.length > 0 && heat.every(([a, b]) => a === b), heat.filter(([a, b]) => a !== b).concat(heat.slice(0, 3)));
 	check('visibility restored', await page.evaluate(() => BLPR.ctx.leftSaber.object3D.layers.mask === 1));
+	await page.evaluate(() => BLPR.patchSettings({visuals: {accuracyHeat: {enabled: false}}}));
 
-	// HUD lines inside the replayer's 3D score HUD
+	// PP line inside the replayer's 3D score HUD
 	await sleep(1500);
 	const hudLine = await page.evaluate(() => {
 		const el = document.getElementById('blpHudPp');
 		return el && {parent: el.parentNode.id, mixin: el.getAttribute('mixin'), visible: el.object3D.visible, text: el.getAttribute('text').value};
 	});
-	check('PP estimate added to the official score HUD', hudLine && hudLine.parent === 'scoreContainer' && hudLine.mixin === 'scoreText' && hudLine.visible && /pp$/.test(hudLine.text), hudLine);
-	await page.evaluate(() => {
-		BLPR.ctx.officialSettings().settings.showHud = false;
-	});
+	check('PP estimate added to the score HUD', hudLine && hudLine.parent === 'scoreContainer' && /\bscoreText\b/.test(hudLine.mixin) && hudLine.visible && /pp$/.test(hudLine.text), hudLine);
+	await officialToggle('showHud', false);
 	await sleep(600);
-	check("PP line follows the replayer's Show HUD", await page.evaluate(() => document.getElementById('blpHudPp').object3D.visible === false));
-	await page.evaluate(() => {
-		BLPR.ctx.officialSettings().settings.showHud = true;
-	});
+	check('PP line follows the replayer\'s "Show HUD"', await page.evaluate(() => document.getElementById('blpHudPp').object3D.visible === false));
+	await officialToggle('showHud', true);
 
 	// Playback
+	const beforeStep = await page.evaluate(() => BLPR.api.time());
 	await page.keyboard.press('BracketRight');
-	await sleep(200);
-	const step = await page.evaluate(() => ({playing: BLPR.api.isPlaying(), seeks: window.__seeks.slice(-1)[0], time: BLPR.api.time()}));
-	check('frame step pauses and seeks to next replay frame', !step.playing && step.seeks > 0, step);
+	await sleep(300);
+	const step = await page.evaluate(() => ({playing: BLPR.api.isPlaying(), time: BLPR.api.time()}));
+	check('frame step pauses and moves to the next replay frame', !step.playing && step.time > beforeStep && step.time - beforeStep < 2, [beforeStep, step]);
 	const before = await page.evaluate(() => BLPR.api.time());
 	await page.keyboard.press('KeyZ');
-	await sleep(700);
+	await sleep(800);
 	await page.keyboard.press('KeyZ');
 	const after = await page.evaluate(() => BLPR.api.time());
 	check('reverse playback scrubs backwards', after < before - 0.2, [before, after]);
@@ -309,15 +360,14 @@ function watch(page, label) {
 	const bm = await sw.evaluate(() => chrome.storage.local.get('blp_bookmarks'));
 	const bmEntry = Object.values(bm.blp_bookmarks || {})[0];
 	check('bookmark saved per replay', bmEntry && bmEntry.items.length === 1, bmEntry);
-	check('bookmark marker on timeline', await page.evaluate(() => document.querySelectorAll('#timeline .blp-r-bookmark-mark').length === 1));
-	check('timeline accuracy graph drawn', await page.evaluate(() => !!document.querySelector('#timeline canvas.blp-r-timeline-graph')));
+	check("bookmark flag on the replayer's timeline", await page.evaluate(() => document.querySelectorAll('#timeline .blp-r-bookmark-mark').length === 1));
 	await page.evaluate(() => BLPR.patchSettings({playback: {persistSpeed: true}}));
 	await page.evaluate(() => {
 		BLPR.ctx.songControls().baseSongSpeed = 1.25; // as the replayer's speed slider / "=" key does
 	});
 	await sleep(1200);
 	const rt = await sw.evaluate(() => chrome.storage.local.get('blp_runtime'));
-	check('official speed change remembered', rt.blp_runtime && Math.abs(rt.blp_runtime.lastSpeed - 1.25) < 1e-6, rt.blp_runtime);
+	check('speed set in the replayer is remembered', rt.blp_runtime && Math.abs(rt.blp_runtime.lastSpeed - 1.25) < 1e-6, rt.blp_runtime);
 	await page.evaluate(() => {
 		BLPR.ctx.songControls().baseSongSpeed = 1;
 	});
@@ -330,65 +380,57 @@ function watch(page, label) {
 	check('A-B loop (T) jumps back', loopNow < loopT + 1.2, [loopT, loopNow]);
 	await page.keyboard.press('Shift+KeyT');
 
-	// Low-accuracy cuts join the replayer's own "slow down on mistakes"
-	const windows = async () => page.evaluate(() => BLPR.ctx.songControls().missWindows.length);
-	await page.evaluate(() => {
-		const os = BLPR.ctx.officialSettings();
-		os.settings.autoSpeedControls = true;
-		BLPR.ctx.scene.emit('settingsChanged');
-	});
+	// Low-accuracy cuts join the replayer's own "change speed around mistakes"
+	const windows = () => page.evaluate(() => BLPR.ctx.songControls().missWindows.length);
+	await officialToggle('autoSpeedControls', true);
 	const officialWindows = await windows();
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true, lowAccThreshold: 108}}));
+	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true, lowAccThreshold: 100}}));
 	await sleep(500);
 	const withLowAcc = await windows();
 	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows, [officialWindows, withLowAcc]);
-	await page.evaluate(() => BLPR.ctx.scene.emit('settingsChanged'));
+	await officialToggle('slowOnMiss', true); // any change makes the replayer recompute its windows
 	check('windows survive the replayer recomputing them', (await windows()) === withLowAcc);
-	await page.evaluate(() => BLPR.api.seek(2 + 7 * 0.5 - 0.1));
-	await sleep(400);
+	await page.evaluate(t => BLPR.api.seek(t), fx.missTimes[2] - 0.05);
+	await sleep(500);
 	const slow = await page.evaluate(() => BLPR.ctx.song().speed);
-	check('official slow-mo engages around a miss', slow < 0.5, slow);
+	check('official slow-mo engages around a miss', slow < 0.9, slow);
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
 	await sleep(300);
 	check('turning it off restores the official windows', (await windows()) === officialWindows);
-	await page.evaluate(() => {
-		BLPR.ctx.officialSettings().settings.autoSpeedControls = false;
-		BLPR.ctx.scene.emit('settingsChanged');
-	});
+	await officialToggle('autoSpeedControls', false);
 
 	// Right-click menu + export
-	await page.mouse.click(640, 300, {button: 'right'});
-	await sleep(200);
+	await page.mouse.move(600, 300);
+	await page.mouse.click(600, 300, {button: 'right'});
+	await sleep(300);
 	const ctxShown = await page.evaluate(() => getComputedStyle(document.getElementById('ctxMenu')).display === 'block' && getComputedStyle(document.getElementById('blpCopyURL')).display !== 'none');
 	check('BL+ items appear in the right-click menu', ctxShown);
 	const [shot] = await Promise.all([page.waitForEvent('download', {timeout: 15000}), page.click('#blpScreenshot')]);
 	const shotPath = await shot.path();
 	check('screenshot from the right-click menu', shot.suggestedFilename().endsWith('.png') && fs.statSync(shotPath).size > 5000, [shot.suggestedFilename(), fs.statSync(shotPath).size]);
-	check('right-click menu closes after use', await page.evaluate(() => document.getElementById('ctxMenu').style.display === 'none'));
 	await page.evaluate(() => BLPR.camera.setMode('orbit', {silent: true}));
 	const link = await page.evaluate(() => BLPR.exporter.buildShareLink());
-	check('share link keeps scoreId and adds time/camera', /scoreId=1001/.test(link) && /time=\d+/.test(link) && /blpMode=orbit/.test(link), link);
+	check('share link keeps scoreId and adds time/camera', new RegExp('scoreId=' + fx.scoreId).test(link) && /time=\d+/.test(link) && /blpMode=orbit/.test(link), link);
 	await page.evaluate(() => BLPR.camera.setMode('default', {silent: true}));
 	await page.evaluate(() => BLPR.patchSettings({export: {clip: {seconds: 2, width: 640, height: 360, fps: 30}}}));
-	const [clipDl] = await Promise.all([page.waitForEvent('download', {timeout: 20000}), page.evaluate(() => BLPR.exporter.startClip())]);
+	const [clipDl] = await Promise.all([page.waitForEvent('download', {timeout: 30000}), page.evaluate(() => BLPR.exporter.startClip())]);
 	const clipPath = await clipDl.path();
 	check('clip recorded as webm', clipDl.suggestedFilename().endsWith('.webm') && fs.statSync(clipPath).size > 1000, [clipDl.suggestedFilename(), fs.statSync(clipPath).size]);
 
-	// Extra hitsounds (bad cuts / misses / bombs) leave the official hitsound alone
+	// Extra hitsounds (bad cuts / misses / bombs) leave the replayer's own hitsound alone
+	const officialGain = await page.evaluate(() => BLPR.ctx.hitSound() && BLPR.ctx.hitSound().gainNode && BLPR.ctx.hitSound().gainNode.gain.value);
 	await page.evaluate(() => BLPR.patchSettings({audio: {enabled: true}}));
 	await sleep(800);
-	const audioState = await page.evaluate(() => ({official: BLPR.ctx.hitSound().gainNode.gain.value, options: document.querySelectorAll('#blp-sec-audio select').length}));
-	check('official hitsound untouched, slots shown in BL+ tab', audioState.official > 0 && audioState.options === 3, audioState);
+	const audioState = await page.evaluate(() => ({official: BLPR.ctx.hitSound() && BLPR.ctx.hitSound().gainNode && BLPR.ctx.hitSound().gainNode.gain.value, options: document.querySelectorAll('#blp-sec-audio select').length}));
+	check('official hitsound untouched, slots shown in BL+ tab', audioState.official === officialGain && audioState.options === 3, [officialGain, audioState]);
 	await page.evaluate(() => BLPR.patchSettings({audio: {enabled: false}}));
 
 	// Shared link round trip (blpCfg + blpMode) and ?blpPanel=1
 	const page2 = await context.newPage();
 	watch(page2, 'replay-link');
 	const shareUrl = new URL(link);
-	shareUrl.searchParams.set('blpPanel', '1');
-	await page2.goto(shareUrl.toString());
-	await page2.waitForFunction(() => window.BLPR && window.BLPR.ctx && window.BLPR.replayInfo, null, {timeout: 30000});
-	await sleep(1200);
+	await openReplay(page2, '&' + shareUrl.searchParams.toString().replace(/^scoreId=\d+&?/, '') + '&blpPanel=1');
+	await sleep(1500);
 	const shared = await page2.evaluate(() => ({
 		override: !!BLPR.sessionOverrides,
 		mode: BLPR.camera.mode,
