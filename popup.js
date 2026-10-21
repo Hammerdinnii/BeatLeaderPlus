@@ -7,12 +7,11 @@
  *     BL+ tab of the replayer's Settings menu, camera mode / preset) – sent to the tab's content
  *     script, which forwards them to the replay page runtime
  *   - user-selected quick toggles (any boolean setting from lib/schema.js)
- *   - new scores from followed players
  */
 (function () {
 	'use strict';
 
-	const {utils: U, storage, defaults: D, i18n, schema} = window.BLP;
+	const {utils: U, storage, i18n, schema} = window.BLP;
 	const t = (k, v) => i18n.t(k, v);
 	const h = U.h;
 	const $ = id => document.getElementById(id);
@@ -26,16 +25,6 @@
 		$('status').textContent = text || '';
 		clearTimeout(status.timer);
 		if (text) status.timer = setTimeout(() => ($('status').textContent = ''), ms);
-	}
-
-	function send(type, payload) {
-		return new Promise((resolve, reject) => {
-			chrome.runtime.sendMessage(Object.assign({type}, payload || {}), res => {
-				if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-				if (!res || !res.ok) return reject(new Error((res && res.error) || 'Failed'));
-				resolve(res.data);
-			});
-		});
 	}
 
 	function sendToTab(msg) {
@@ -170,37 +159,6 @@
 		}
 	}
 
-	async function renderFollows() {
-		const section = $('followSection');
-		if (!settings.popup.showFollows || !settings.site.follow.enabled) return section.classList.add('hidden');
-		section.classList.remove('hidden');
-		const list = $('followList');
-		list.textContent = '';
-		let state;
-		try {
-			state = await send('getFollowState');
-		} catch (e) {
-			state = D.DEFAULT_FOLLOW_STATE;
-		}
-		const scores = (state.newScores || []).slice(0, 12);
-		if (!scores.length) {
-			list.appendChild(h('p', {class: 'empty'}, t('popup.noNewScores')));
-			return;
-		}
-		for (const s of scores) {
-			const url = U.replayUrl({scoreId: s.scoreId});
-			list.appendChild(
-				h(
-					'a',
-					{class: 'item', href: url, target: '_blank', title: s.song + (s.difficulty ? ' (' + s.difficulty + ')' : '')},
-					h('img', {src: s.cover || s.avatar || 'icons/icon48.png', alt: ''}),
-					h('div', {class: 'meta'}, h('span', null, s.playerName), h('span', {class: 'muted'}, s.song + (s.difficulty ? ' · ' + s.difficulty : ''))),
-					h('span', {class: 'value'}, s.accuracy != null ? (s.accuracy * 100).toFixed(2) + '%' : '', s.pp ? h('div', {class: 'muted'}, s.pp.toFixed(1) + 'pp') : null)
-				)
-			);
-		}
-	}
-
 	/* ------------------------------------------------------------------ init */
 
 	async function init() {
@@ -223,22 +181,7 @@
 			chrome.runtime.openOptionsPage();
 			window.close();
 		});
-		$('clearNew').addEventListener('click', async () => {
-			await send('clearNewScores').catch(() => {});
-			renderFollows();
-		});
-		$('checkNow').addEventListener('click', async () => {
-			status(t('common.loading'), 20000);
-			try {
-				const res = await send('checkFollowsNow');
-				status(res.found ? '+' + res.found : t('popup.noNewScores'));
-			} catch (e) {
-				status(e.message);
-			}
-			renderFollows();
-		});
 		renderToggles();
-		renderFollows();
 
 		[activeTab] = await chrome.tabs.query({active: true, currentWindow: true});
 		let pageInfo = null;
