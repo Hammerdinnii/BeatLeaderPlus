@@ -43,6 +43,8 @@
 	];
 	const PAGE_PATCHABLE_SECTIONS = ['camera', 'playback', 'overlay', 'visuals', 'audio', 'export'];
 	const MAX_PATHS = 100;
+	const MODEL_EXT = /\.(glb|gltf|obj)$/i;
+	const MAX_MODEL_BYTES = 12 * 1024 * 1024; // same limit as uploads on the options page
 
 	const pending = new Map();
 	let seq = 0;
@@ -140,6 +142,24 @@
 			const m = models[name];
 			if (!m) throw new Error('Stored model not found: ' + name);
 			return {name: m.name, mime: m.mime, data: b64ToBuffer(m.b64)};
+		},
+		async listSaberModels() {
+			const models = await storage.getLocal(D.KEYS.saberModels, {});
+			return Object.values(models).map(m => ({name: m.name, size: m.size}));
+		},
+		/** A model dropped on Settings → BL+; stored like an upload from the options page. */
+		async saveSaberModel({name, data}) {
+			const clean = String(name || '')
+				.split(/[\\/]/)
+				.pop()
+				.slice(0, 120);
+			if (!MODEL_EXT.test(clean)) throw new Error('Unsupported model type: ' + clean);
+			if (!(data instanceof ArrayBuffer) || !data.byteLength) throw new Error('Empty model file');
+			if (data.byteLength > MAX_MODEL_BYTES) throw new Error('Model is larger than ' + MAX_MODEL_BYTES / 1048576 + ' MB');
+			const mime = /\.obj$/i.test(clean) ? 'text/plain' : /\.gltf$/i.test(clean) ? 'model/gltf+json' : 'model/gltf-binary';
+			const b64 = U.bytesToBase64(new Uint8Array(data));
+			await storage.updateLocal(D.KEYS.saberModels, {}, m => Object.assign(m, {[clean]: {name: clean, mime, size: data.byteLength, b64, added: Date.now()}}));
+			return {ref: 'stored:' + clean, name: clean};
 		},
 		async patchSettings({patch}) {
 			if (!U.isObject(patch)) throw new Error('Invalid patch');
