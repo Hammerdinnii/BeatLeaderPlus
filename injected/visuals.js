@@ -31,6 +31,7 @@
 		noteOverridden: false,
 		trailTouched: false,
 		models: {left: {key: '', url: '', el: null, objUrl: null}, right: {key: '', url: '', el: null, objUrl: null}},
+		saberFiles: new Map(),
 		dropTarget: 'both',
 		dropBusy: false,
 		dropError: '',
@@ -177,8 +178,8 @@
 
 	/* ------------------------------------------------------------------ custom saber models */
 
-	const MODEL_EXT = /\.(glb|gltf|obj)$/i;
-	const MAX_MODEL_BYTES = 12 * 1024 * 1024;
+	const MODEL_EXT = /\.(glb|gltf|obj|saber)$/i;
+	const MAX_MODEL_BYTES = 32 * 1024 * 1024;
 	// The replayer's saber, in its .saberContainer: a 1 m blade from the hilt towards -Y and a
 	// 0.155 m handle towards +Y. Auto-fit maps a model onto that.
 	const SABER_LENGTH = 1.155;
@@ -186,7 +187,7 @@
 	const DEG = Math.PI / 180;
 
 	function modelFormat(name) {
-		return /\.obj(\?|#|$)/i.test(name) ? 'obj' : 'gltf';
+		return /\.saber(\?|#|$)/i.test(name) ? 'saber' : /\.obj(\?|#|$)/i.test(name) ? 'obj' : 'gltf';
 	}
 
 	const modelName = ref => (ref.startsWith('stored:') ? ref.slice(7) : ref.split(/[?#]/)[0].split('/').pop() || ref);
@@ -203,7 +204,7 @@
 		const url = String(s.customModel[hand] || '').trim();
 		if (!url) return '';
 		const m = s.customModel;
-		const colored = m.tint || modelFormat(url) === 'obj';
+		const colored = m.tint || modelFormat(url) !== 'gltf';
 		return [url, m.autoFit ? 1 : 0, m.unlit ? 1 : 0, m.tint ? 1 : 0, colored ? saberColor(hand) : ''].join('|');
 	}
 
@@ -220,7 +221,7 @@
 				// A-Frame entities override remove(), so detach through the parent.
 				if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
 				if (slot.objUrl) URL.revokeObjectURL(slot.objUrl);
-				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: ''});
+				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: '', info: null});
 				setDefaultSaberVisible(el, true);
 				if (key) loadModel(hand, el, slot, key).catch(e => modelFailed(slot, key, e));
 				refreshModelUi();
@@ -242,22 +243,68 @@
 		refreshModelUi();
 	}
 
-	async function loadModel(hand, saberEl, slot, key) {
-		const url = slot.url;
-		let src = url;
-		let name = modelName(url);
+	/** The model file's bytes: from extension storage (stored:<name>) or a URL. */
+	async function modelBytes(url) {
 		if (url.startsWith('stored:')) {
 			const data = await R.request('getSaberModel', {name: url.slice(7)}, 30000);
-			if (slot.key !== key) return;
-			name = data.name;
-			slot.objUrl = URL.createObjectURL(new Blob([data.data], {type: data.mime || 'application/octet-stream'}));
-			src = slot.objUrl;
+			return {name: data.name, mime: data.mime, data: data.data};
 		}
-		if (slot.key !== key) return; // settings changed while loading
+		const res = await fetch(url);
+		if (!res.ok) throw new Error(t('r.modelFailed', {name: modelName(url)}) + ' (HTTP ' + res.status + ')');
+		return {name: modelName(url), data: await res.arrayBuffer()};
+	}
+
+	/** .saber files are parsed once and shared by both hands (they hold both sabers). */
+	function parsedSaber(url) {
+		let entry = st.saberFiles.get(url);
+		if (!entry) {
+			entry = modelBytes(url)
+				.then(file => window.BLP.unitySaber.readAsync(file.data))
+				.then(parsed => {
+					R.log.debug('.saber parsed in', parsed.parsedIn, parsed.name);
+					return parsed;
+				});
+			st.saberFiles.set(url, entry);
+			entry.catch(() => st.saberFiles.delete(url));
+			while (st.saberFiles.size > 2) st.saberFiles.delete(st.saberFiles.keys().next().value);
+		}
+		return entry;
+	}
+
+	async function loadModel(hand, saberEl, slot, key) {
+		const url = slot.url;
 		const m = vis().sabers.customModel;
 		const container = saberEl.querySelector('.saberContainer') || saberEl;
 		const ent = document.createElement('a-entity');
 		ent.classList.add('blp-saber-model');
+		const done = () => {
+			slot.loaded = true;
+			slot.state = 'loaded';
+			updateCustomModels();
+			refreshModelUi();
+		};
+
+		if (modelFormat(url) === 'saber') {
+			const parsed = await parsedSaber(url);
+			if (slot.key !== key) return;
+			slot.info = {name: parsed.name, author: parsed.author, warnings: parsed.warnings};
+			// Already placed in saber space by the reader: no auto-fit.
+			ent.setObject3D('mesh', buildSaberObject(parsed, hand, m));
+			container.appendChild(ent);
+			slot.el = ent;
+			return done();
+		}
+
+		let src = url;
+		let name = modelName(url);
+		if (url.startsWith('stored:')) {
+			const file = await modelBytes(url);
+			if (slot.key !== key) return;
+			name = file.name;
+			slot.objUrl = URL.createObjectURL(new Blob([file.data], {type: file.mime || 'application/octet-stream'}));
+			src = slot.objUrl;
+		}
+		if (slot.key !== key) return; // settings changed while loading
 		if (modelFormat(name) === 'obj') {
 			// OBJ files carry no colors: use the saber color, flat like the replayer's own blade.
 			ent.setAttribute('material', {shader: 'flat', color: saberColor(hand)});
@@ -267,14 +314,72 @@
 			if (slot.key !== key) return;
 			const mesh = ent.getObject3D('mesh');
 			if (mesh) prepareModel(mesh, hand, m);
-			slot.loaded = true;
-			slot.state = 'loaded';
-			updateCustomModels();
-			refreshModelUi();
+			done();
 		});
 		ent.addEventListener('model-error', () => modelFailed(slot, key, new Error(t('r.modelFailed', {name}))));
 		container.appendChild(ent);
 		slot.el = ent;
+	}
+
+	const isPowerOfTwo = n => n > 0 && (n & (n - 1)) === 0;
+
+	/** three.js textures for a parsed .saber, created once per file. */
+	function saberTextures(parsed) {
+		if (!parsed.threeTextures) {
+			parsed.threeTextures = parsed.textures.map(tex => {
+				const tx = new THREE.DataTexture(tex.data, tex.width, tex.height, THREE.RGBAFormat);
+				const pot = isPowerOfTwo(tex.width) && isPowerOfTwo(tex.height);
+				// Unity stores rows bottom-up like WebGL, so no flip.
+				tx.flipY = false;
+				tx.wrapS = tx.wrapT = pot ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+				tx.magFilter = THREE.LinearFilter;
+				tx.minFilter = pot ? THREE.LinearMipMapLinearFilter || THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+				tx.generateMipmaps = pot;
+				tx.needsUpdate = true;
+				return tx;
+			});
+		}
+		return parsed.threeTextures;
+	}
+
+	/** One saber of a parsed .saber file as a three.js group. */
+	function buildSaberObject(parsed, hand, m) {
+		const side = parsed[hand] || parsed.left || parsed.right;
+		const textures = saberTextures(parsed);
+		const materials = parsed.materials.map(mat => {
+			let map = mat.texture >= 0 ? textures[mat.texture] : null;
+			if (map && (mat.repeat[0] !== 1 || mat.repeat[1] !== 1 || mat.offset[0] || mat.offset[1])) {
+				map = map.clone();
+				map.needsUpdate = true;
+				map.repeat.set(mat.repeat[0], mat.repeat[1]);
+				map.offset.set(mat.offset[0], mat.offset[1]);
+			}
+			// Materials marked for custom colors take the saber color, as in the game.
+			const tint = mat.saberColor || m.tint;
+			const params = {
+				color: tint ? new THREE.Color(saberColor(hand)) : new THREE.Color(mat.color[0], mat.color[1], mat.color[2]),
+				map,
+				transparent: mat.transparent,
+				opacity: mat.color[3],
+				side: THREE.DoubleSide,
+			};
+			return m.unlit ? new THREE.MeshBasicMaterial(params) : new THREE.MeshStandardMaterial(Object.assign(params, {roughness: 0.6, metalness: 0.1}));
+		});
+		const group = new THREE.Group();
+		for (const part of side.parts) {
+			const geo = new THREE.BufferGeometry();
+			setAttr(geo, 'position', new THREE.BufferAttribute(part.positions, 3));
+			if (part.normals) setAttr(geo, 'normal', new THREE.BufferAttribute(part.normals, 3));
+			if (part.uvs) setAttr(geo, 'uv', new THREE.BufferAttribute(part.uvs, 2));
+			const small = part.positions.length / 3 < 65536;
+			geo.setIndex(new THREE.BufferAttribute(small ? new Uint16Array(part.indices) : part.indices, 1));
+			for (const g of part.groups) geo.addGroup(g.start, g.count, g.material);
+			geo.computeBoundingSphere();
+			const mesh = new THREE.Mesh(geo, materials);
+			mesh.name = part.name;
+			group.add(mesh);
+		}
+		return group;
 	}
 
 	function invert(matrix) {
@@ -363,8 +468,7 @@
 	async function importModel(file) {
 		const name = file.name || 'model';
 		st.dropError = '';
-		if (/\.saber$/i.test(name)) st.dropError = t('r.modelSaberFile');
-		else if (!MODEL_EXT.test(name)) st.dropError = t('r.modelUnsupported', {name});
+		if (!MODEL_EXT.test(name)) st.dropError = t('r.modelUnsupported', {name});
 		else if (file.size > MAX_MODEL_BYTES) st.dropError = t('r.modelTooBig', {name});
 		if (st.dropError) return refreshModelUi();
 		st.dropBusy = true;
@@ -539,18 +643,24 @@
 		const target = v => ({value: v, label: t('r.modelTarget.' + v)});
 		body.appendChild(ui.select(t('r.modelTarget'), ['both', 'left', 'right'].map(target), st.dropTarget, v => (st.dropTarget = v)));
 		body.appendChild(dropZone());
+		let warnings = null;
 		for (const hand of ['left', 'right']) {
 			const ref = String(m[hand] || '').trim();
 			if (!ref) continue;
 			const slot = st.models[hand];
 			const status = slot.state === 'loading' ? ' · ' + t('r.modelLoading') : slot.state === 'error' ? ' · ⚠ ' + slot.error : slot.state === 'loaded' ? ' ✓' : '';
+			// .saber files name themselves (and their author) in their descriptor.
+			const info = slot.info;
+			const label = info && info.name ? (info.author ? t('r.modelBy', {name: info.name, author: info.author}) : info.name) : modelName(ref);
+			if (info && info.warnings.length && !warnings) warnings = info.warnings;
 			body.appendChild(
 				ui.row(
-					ui.h('span', {class: 'blp-r-hint blp-r-inline blp-r-grow', title: ref}, t('common.' + hand) + ': ' + modelName(ref) + status),
+					ui.h('span', {class: 'blp-r-hint blp-r-inline blp-r-grow', title: ref}, t('common.' + hand) + ': ' + label + status),
 					ui.button('✕', () => set('sabers.customModel.' + hand, ''), {title: t('r.modelRemove')})
 				)
 			);
 		}
+		if (warnings) body.appendChild(ui.hint('⚠ ' + warnings[0] + (warnings.length > 1 ? ' ' + t('r.modelMoreWarnings', {n: warnings.length - 1}) : '')));
 		loadStoredModels();
 		if (st.storedModels && st.storedModels.length) {
 			const options = [{value: '', label: t('r.modelChoose')}].concat(st.storedModels.map(x => ({value: 'stored:' + x.name, label: x.name})));

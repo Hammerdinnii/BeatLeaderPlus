@@ -31,6 +31,7 @@
 	const FILES = [
 		'lib/i18n.js',
 		'lib/utils.js',
+		'lib/unity-saber.js',
 		'injected/core.js',
 		'injected/ui.js',
 		'injected/camera.js',
@@ -43,8 +44,8 @@
 	];
 	const PAGE_PATCHABLE_SECTIONS = ['camera', 'playback', 'overlay', 'visuals', 'audio', 'export'];
 	const MAX_PATHS = 100;
-	const MODEL_EXT = /\.(glb|gltf|obj)$/i;
-	const MAX_MODEL_BYTES = 12 * 1024 * 1024; // same limit as uploads on the options page
+	const MODEL_EXT = /\.(glb|gltf|obj|saber)$/i;
+	const MAX_MODEL_BYTES = 32 * 1024 * 1024; // same limit as uploads on the options page
 
 	const pending = new Map();
 	let seq = 0;
@@ -156,7 +157,7 @@
 			if (!MODEL_EXT.test(clean)) throw new Error('Unsupported model type: ' + clean);
 			if (!(data instanceof ArrayBuffer) || !data.byteLength) throw new Error('Empty model file');
 			if (data.byteLength > MAX_MODEL_BYTES) throw new Error('Model is larger than ' + MAX_MODEL_BYTES / 1048576 + ' MB');
-			const mime = /\.obj$/i.test(clean) ? 'text/plain' : /\.gltf$/i.test(clean) ? 'model/gltf+json' : 'model/gltf-binary';
+			const mime = /\.obj$/i.test(clean) ? 'text/plain' : /\.gltf$/i.test(clean) ? 'model/gltf+json' : /\.saber$/i.test(clean) ? 'application/octet-stream' : 'model/gltf-binary';
 			const b64 = U.bytesToBase64(new Uint8Array(data));
 			await storage.updateLocal(D.KEYS.saberModels, {}, m => Object.assign(m, {[clean]: {name: clean, mime, size: data.byteLength, b64, added: Date.now()}}));
 			return {ref: 'stored:' + clean, name: clean};
