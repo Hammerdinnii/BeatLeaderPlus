@@ -116,24 +116,6 @@
 	}
 }
 
-.blp-star {
-	width: 20px;
-	height: 20px;
-	margin-left: 4px;
-	font-size: 14px;
-	border-color: transparent;
-	background: transparent;
-	color: var(--blpu-muted);
-	vertical-align: middle;
-}
-
-.blp-star:hover,
-.blp-star.blp-star-on {
-	color: #ffc93c;
-	border-color: transparent;
-	background: transparent;
-}
-
 .blp-badges {
 	display: inline-flex;
 	gap: 3px;

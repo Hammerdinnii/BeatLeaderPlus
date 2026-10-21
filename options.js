@@ -7,8 +7,8 @@
  * Scope: "Global" edits the global settings; selecting a domain edits that domain's override
  * set (only the differences to the global settings are stored – see lib/storage.js).
  *
- * Custom renderers (camera presets, paths, bookmarks, hitsounds, saber models, favorites,
- * follows, popup toggles, backup tools, previews) are defined in RENDERERS below.
+ * Custom renderers (camera presets, paths, bookmarks, hitsounds, saber models, follows, popup
+ * toggles, backup tools, previews) are defined in RENDERERS below.
  */
 (function () {
 	'use strict';
@@ -1038,49 +1038,6 @@
 			);
 		},
 
-		async favorites(box) {
-			const fav = U.withDefaults(await storage.getLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES), D.DEFAULT_FAVORITES);
-			for (const kind of ['players', 'maps']) {
-				box.appendChild(h('h3', null, t(kind === 'players' ? 'opt.favPlayers' : 'opt.favMaps')));
-				const list = h('div', {class: 'list'});
-				const entries = Object.values(fav[kind]).sort((a, b) => (b.added || 0) - (a.added || 0));
-				if (!entries.length) list.appendChild(h('p', {class: 'muted'}, t('opt.favEmpty')));
-				for (const f of entries) {
-					const url = kind === 'players' ? 'https://beatleader.com/u/' + encodeURIComponent(f.id) : 'https://beatleader.com' + (f.url || '/leaderboard/global/' + encodeURIComponent(f.id));
-					const note = h('input', {type: 'text', value: f.note || '', placeholder: t('common.notes')});
-					note.addEventListener('change', () =>
-						storage.updateLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES, m => {
-							if (m[kind][f.id]) m[kind][f.id].note = note.value.trim();
-							return m;
-						})
-					);
-					list.appendChild(
-						h(
-							'div',
-							{class: 'list-item'},
-							kind === 'players' && f.avatar ? h('img', {src: f.avatar, alt: ''}) : null,
-							h('a', {class: 'grow', href: url, target: '_blank', rel: 'noopener'}, f.name),
-							note,
-							h(
-								'button',
-								{
-									class: 'btn small danger',
-									type: 'button',
-									onclick: () =>
-										storage.updateLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES, m => {
-											delete m[kind][f.id];
-											return m;
-										}),
-								},
-								'✕'
-							)
-						)
-					);
-				}
-				box.appendChild(list);
-			}
-		},
-
 		async followed(box) {
 			const st = await storage.getLocal(D.KEYS.follow, D.DEFAULT_FOLLOW_STATE);
 			const send = (type, payload) =>
@@ -1355,7 +1312,6 @@
 		}, 300);
 		storage.onLocalChanged(D.KEYS.cameraPaths, () => rerenderCustom('cameraPaths'));
 		storage.onLocalChanged(D.KEYS.bookmarks, () => rerenderCustom('bookmarks'));
-		storage.onLocalChanged(D.KEYS.favorites, () => rerenderCustom('favorites'));
 		storage.onLocalChanged(D.KEYS.follow, () => rerenderCustom('followed'));
 		storage.onLocalChanged(D.KEYS.saberModels, () => rerenderCustom('saberModels'));
 		storage.onLocalChanged(D.KEYS.hitsoundPack, () => {

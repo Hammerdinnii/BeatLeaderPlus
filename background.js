@@ -345,9 +345,6 @@ const handlers = {
 	async resolveScore(msg) {
 		return fetchScore(msg.scoreId);
 	},
-	async resolvePlayer(msg) {
-		return resolvePlayer(msg.player);
-	},
 	async downloadReplay(msg) {
 		return downloadReplay(msg);
 	},
@@ -414,8 +411,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(async details => {
 	const settings = await loadSettings(); // runs migrations
 	await storage.saveSettings(settings, {force: details.reason === 'install'});
-	const fav = await storage.getLocal(D.KEYS.favorites, null);
-	if (!fav) await storage.setLocal(D.KEYS.favorites, U.deepClone(D.DEFAULT_FAVORITES));
 	const follow = await storage.getLocal(D.KEYS.follow, null);
 	if (!follow) await storage.setLocal(D.KEYS.follow, U.deepClone(D.DEFAULT_FOLLOW_STATE));
 	setupContextMenus();
