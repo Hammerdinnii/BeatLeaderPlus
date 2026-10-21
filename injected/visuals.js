@@ -648,7 +648,7 @@
 			const ref = String(m[hand] || '').trim();
 			if (!ref) continue;
 			const slot = st.models[hand];
-			const status = slot.state === 'loading' ? ' · ' + t('r.modelLoading') : slot.state === 'error' ? ' · ⚠ ' + slot.error : slot.state === 'loaded' ? ' ✓' : '';
+			const status = slot.state === 'loading' ? ' · ' + t('r.modelLoading') : slot.state === 'error' ? ' · ' + slot.error : slot.state === 'loaded' ? ' · ' + t('r.modelLoaded') : '';
 			// .saber files name themselves (and their author) in their descriptor.
 			const info = slot.info;
 			const label = info && info.name ? (info.author ? t('r.modelBy', {name: info.name, author: info.author}) : info.name) : modelName(ref);
@@ -660,7 +660,7 @@
 				)
 			);
 		}
-		if (warnings) body.appendChild(ui.hint('⚠ ' + warnings[0] + (warnings.length > 1 ? ' ' + t('r.modelMoreWarnings', {n: warnings.length - 1}) : '')));
+		if (warnings) body.appendChild(ui.hint(t('r.modelNote') + ' ' + warnings[0] + (warnings.length > 1 ? ' ' + t('r.modelMoreWarnings', {n: warnings.length - 1}) : '')));
 		loadStoredModels();
 		if (st.storedModels && st.storedModels.length) {
 			const options = [{value: '', label: t('r.modelChoose')}].concat(st.storedModels.map(x => ({value: 'stored:' + x.name, label: x.name})));

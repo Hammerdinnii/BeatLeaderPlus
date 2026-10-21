@@ -665,7 +665,7 @@
 	function pathOptions() {
 		const pr = cam.path;
 		const options = pr.list.map(p => ({value: p.id, label: p.name + ' (' + p.keyframes.length + ')'}));
-		if (pr.current && !pr.list.some(p => p.id === pr.current.id)) options.unshift({value: pr.current.id, label: (pr.current.shared ? '🔗 ' : '✱ ') + pr.current.name});
+		if (pr.current && !pr.list.some(p => p.id === pr.current.id)) options.unshift({value: pr.current.id, label: pr.current.name + ' (' + t(pr.current.shared ? 'r.pathShared' : 'r.pathUnsaved') + ')'});
 		return options;
 	}
 
@@ -688,7 +688,7 @@
 		body.appendChild(
 			ui.row(
 				ui.select('', presetOptions, '', id => id && applyPreset(findPreset(id))),
-				ui.button('💾', capturePreset, {title: t('r.savePreset')})
+				ui.button('', capturePreset, {icon: 'fas fa-floppy-disk', title: t('r.savePreset')})
 			)
 		);
 		const options = pathOptions();
@@ -697,7 +697,7 @@
 			body.appendChild(
 				ui.row(
 					ui.select('', options, cam.path.current ? cam.path.current.id : '', selectPath),
-					ui.button(cam.path.playing ? '⏹' : '▶', togglePath, {active: cam.path.playing, title: t(cam.path.playing ? 'r.pathStop' : 'r.pathPlay')})
+					ui.button('', togglePath, {icon: cam.path.playing ? 'fas fa-stop' : 'fas fa-play', active: cam.path.playing, title: t(cam.path.playing ? 'r.pathStop' : 'r.pathPlay')})
 				)
 			);
 		}
@@ -754,19 +754,19 @@
 		if (cur) body.appendChild(ui.hint(cur.name + ' · ' + t('opt.pathKeyframes', {n: cur.keyframes.length, d: pathDuration(cur).toFixed(1)})));
 		body.appendChild(
 			ui.row(
-				ui.button(pr.playing ? '⏹' : '▶', togglePath, {active: pr.playing, disabled: !cur, title: t(pr.playing ? 'r.pathStop' : 'r.pathPlay')}),
-				ui.button(pr.recording ? '⏹ ' + t('r.pathStopRecord') : '⏺ ' + t('r.pathRecord'), startRecording, {active: pr.recording}),
-				ui.button('＋', addKeyframe, {title: t('r.pathKeyframe')})
+				ui.button('', togglePath, {icon: pr.playing ? 'fas fa-stop' : 'fas fa-play', active: pr.playing, disabled: !cur, title: t(pr.playing ? 'r.pathStop' : 'r.pathPlay')}),
+				ui.button(t(pr.recording ? 'r.pathStopRecord' : 'r.pathRecord'), startRecording, {icon: pr.recording ? 'fas fa-stop' : 'fas fa-circle', active: pr.recording}),
+				ui.button('', addKeyframe, {icon: 'fas fa-plus', title: t('r.pathKeyframe')})
 			)
 		);
 		body.appendChild(
 			ui.row(
-				cur && (cur.shared || !pr.list.some(p => p.id === cur.id)) ? ui.button('💾', () => savePath(cur).then(refreshUi), {title: t('common.save')}) : null,
-				ui.button('✎', renameCurrentPath, {title: t('common.rename'), disabled: !cur}),
-				ui.button('🗑', deleteCurrentPath, {title: t('common.delete'), disabled: !cur}),
-				ui.button('⬇', exportPath, {title: t('r.exportPath'), disabled: !cur}),
-				ui.button('🔗', sharePathLink, {title: t('r.sharePath'), disabled: !cur}),
-				ui.button('⬆', importPath, {title: t('r.pathImport')})
+				cur && (cur.shared || !pr.list.some(p => p.id === cur.id)) ? ui.button('', () => savePath(cur).then(refreshUi), {icon: 'fas fa-floppy-disk', title: t('common.save')}) : null,
+				ui.button('', renameCurrentPath, {icon: 'fas fa-pen', title: t('common.rename'), disabled: !cur}),
+				ui.button('', deleteCurrentPath, {icon: 'fas fa-trash', title: t('common.delete'), disabled: !cur}),
+				ui.button('', exportPath, {icon: 'fas fa-download', title: t('r.exportPath'), disabled: !cur}),
+				ui.button('', sharePathLink, {icon: 'fas fa-link', title: t('r.sharePath'), disabled: !cur}),
+				ui.button('', importPath, {icon: 'fas fa-upload', title: t('r.pathImport')})
 			)
 		);
 	}

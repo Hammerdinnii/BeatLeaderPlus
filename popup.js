@@ -135,16 +135,16 @@
 					}
 				},
 			},
-			'🔗 ' + t('popup.copyLink')
+			t('popup.copyLink')
 		);
 		body.appendChild(
 			h(
 				'div',
 				{class: 'actions'},
 				copyBtn,
-				h('button', {class: 'btn', onclick: run('screenshot', t('r.screenshotSaved'))}, '📷 ' + t('popup.screenshot')),
-				h('button', {class: 'btn', onclick: run('recordClip')}, '⏺ ' + t('popup.recordClip')),
-				h('button', {class: 'btn', onclick: run('togglePanel')}, '🎛 ' + t('popup.togglePanel'))
+				h('button', {class: 'btn', onclick: run('screenshot', t('r.screenshotSaved'))}, t('popup.screenshot')),
+				h('button', {class: 'btn', onclick: run('recordClip')}, t('popup.recordClip')),
+				h('button', {class: 'btn', onclick: run('togglePanel')}, t('popup.togglePanel'))
 			)
 		);
 		copyBtn.style.gridColumn = '1 / -1';
@@ -221,7 +221,7 @@
 					'a',
 					{class: 'item', href: url, target: '_blank', title: f.note || f.name},
 					favTab === 'players' ? h('img', {src: f.avatar || 'icons/icon48.png', alt: ''}) : null,
-					h('div', {class: 'meta'}, h('span', null, '★ ' + f.name), f.note ? h('span', {class: 'muted'}, f.note) : null)
+					h('div', {class: 'meta'}, h('span', null, f.name), f.note ? h('span', {class: 'muted'}, f.note) : null)
 				)
 			);
 		}

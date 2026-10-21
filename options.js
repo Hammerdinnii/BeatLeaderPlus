@@ -82,7 +82,7 @@
 
 	function setStatus(kind) {
 		const el = $('saveStatus');
-		el.textContent = kind === 'saving' ? t('opt.saving') : kind === 'saved' ? '✓ ' + t('opt.saved') : '';
+		el.textContent = kind === 'saving' ? t('opt.saving') : kind === 'saved' ? t('opt.saved') : '';
 		el.style.color = kind === 'error' ? 'var(--bad)' : '';
 		if (kind === 'saved') {
 			clearTimeout(setStatus.timer);
@@ -327,7 +327,7 @@
 		const el = h(
 			'section',
 			{class: 'section', id: section.id, dataset: {section: section.id}},
-			h('header', {class: 'section-head'}, h('div', null, h('h2', null, section.icon + ' ' + t('s.' + section.id)), h('p', {class: 'muted'}, t('sd.' + section.id))), D.DEFAULT_SETTINGS[section.id] ? reset : null),
+			h('header', {class: 'section-head'}, h('div', null, h('h2', null, t('s.' + section.id)), h('p', {class: 'muted'}, t('sd.' + section.id))), D.DEFAULT_SETTINGS[section.id] ? reset : null),
 			state.scope !== 'global' && GLOBAL_ONLY_SECTIONS.includes(section.id) ? h('p', {class: 'notice'}, t('opt.globalOnly')) : null,
 			body
 		);
@@ -384,7 +384,6 @@
 							history.replaceState(null, '', '#' + s.id);
 						},
 					},
-					h('span', null, s.icon),
 					t('s.' + s.id)
 				)
 			);
@@ -536,7 +535,7 @@
 					{class: 'tp-card'},
 					h('div', {class: 'tp-title'}, t('opt.previewLeaderboard') + ' · Example Song (Expert+)'),
 					rows.map(r => h('div', {class: 'tp-row'}, h('span', {class: 'tp-badge'}, r[0]), h('span', null, r[1]), h('span', {class: 'tp-acc'}, r[2]), h('span', {class: 'tp-pp'}, r[3]))),
-					h('div', {class: 'tp-foot'}, h('a', {class: 'tp-link', href: '#'}, 'Show more'), h('span', {class: 'tp-chip tp-up'}, '▲ 12'), h('span', {class: 'tp-chip tp-down'}, '▼ 3'), h('span', {class: 'tp-btn'}, 'Replay'))
+					h('div', {class: 'tp-foot'}, h('a', {class: 'tp-link', href: '#'}, 'Show more'), h('span', {class: 'tp-chip tp-up'}, '+12'), h('span', {class: 'tp-chip tp-down'}, '-3'), h('span', {class: 'tp-btn'}, 'Replay'))
 				)
 			)
 		);
@@ -751,7 +750,7 @@
 					h(
 						'div',
 						{class: 'list-item'},
-						h('span', {class: 'grow', title: p.name}, '🛤 ' + p.name),
+						h('span', {class: 'grow', title: p.name}, p.name),
 						h('span', {class: 'muted'}, t('opt.pathKeyframes', {n: k.length, d: dur}) + ' · ' + t('cam.timeBase.' + (p.timeBase || 'song'))),
 						h(
 							'button',
@@ -764,9 +763,9 @@
 									await storage.updateLocal(D.KEYS.cameraPaths, [], l => l.map(x => (x.id === p.id ? Object.assign(x, {name: name.slice(0, 80)}) : x)));
 								},
 							},
-							'✎'
+							t('common.rename')
 						),
-						h('button', {class: 'btn small', type: 'button', onclick: () => downloadJson({format: 'beatleaderplus-camera-path', version: 1, path: p}, U.sanitizeFilename('BLP camera path - ' + p.name) + '.json')}, '⬇'),
+						h('button', {class: 'btn small', type: 'button', onclick: () => downloadJson({format: 'beatleaderplus-camera-path', version: 1, path: p}, U.sanitizeFilename('BLP camera path - ' + p.name) + '.json')}, t('common.export')),
 						h('button', {class: 'btn small danger', type: 'button', onclick: () => storage.updateLocal(D.KEYS.cameraPaths, [], l => l.filter(x => x.id !== p.id))}, '✕')
 					)
 				);
@@ -814,7 +813,7 @@
 					h(
 						'div',
 						{class: 'list-item'},
-						h('span', {class: 'grow', title: items}, '🔖 ' + (entry.title || key)),
+						h('span', {class: 'grow', title: items}, entry.title || key),
 						h('span', {class: 'muted'}, t('opt.bookmarksFor', {n: (entry.items || []).length})),
 						entry.url || entry.scoreId
 							? h('a', {class: 'btn small', href: entry.url || U.buildEnhancedReplayUrl({scoreId: entry.scoreId}, state.global), target: '_blank', rel: 'noopener'}, t('common.open'))
@@ -842,7 +841,7 @@
 			const pack = await storage.getLocal(D.KEYS.hitsoundPack, null);
 			const sounds = [{value: 'none', label: t('opt.sound.none')}]
 				.concat(BUILTIN_SOUNDS.map(id => ({value: id, label: t('opt.sound.' + id)})))
-				.concat(pack && pack.sounds ? pack.sounds.map(s => ({value: 'pack:' + s.id, label: '📦 ' + s.name})) : []);
+				.concat(pack && pack.sounds ? pack.sounds.map(s => ({value: 'pack:' + s.id, label: s.name + ' (' + t('opt.hitsoundPack') + ')'})) : []);
 			box.appendChild(h('h3', null, t('opt.hitsoundSlots')));
 			for (const slot of ['bad', 'miss', 'bomb']) {
 				const base = 'audio.slots.' + slot;
@@ -859,7 +858,7 @@
 						enabled,
 						sel,
 						vol,
-						h('button', {class: 'btn small', type: 'button', onclick: () => previewSound(get(base + '.sound'), Number(get(base + '.volume')))}, '▶')
+						h('button', {class: 'btn small', type: 'button', onclick: () => previewSound(get(base + '.sound'), Number(get(base + '.volume')))}, t('common.preview'))
 					)
 				);
 			}
@@ -876,9 +875,9 @@
 						h(
 							'div',
 							{class: 'list-item'},
-							h('span', {class: 'grow'}, '🔊 ' + s.name),
+							h('span', {class: 'grow'}, s.name),
 							h('span', {class: 'muted'}, fmtBytes(s.size || 0)),
-							h('button', {class: 'btn small', type: 'button', onclick: () => previewSound('pack:' + s.id)}, '▶')
+							h('button', {class: 'btn small', type: 'button', onclick: () => previewSound('pack:' + s.id)}, t('common.preview'))
 						)
 					);
 				}
@@ -990,7 +989,7 @@
 					h(
 						'div',
 						{class: 'list-item'},
-						h('span', {class: 'grow'}, '🗡 ' + name),
+						h('span', {class: 'grow'}, name),
 						h('span', {class: 'muted'}, fmtBytes(models[name].size || 0)),
 						h('button', {class: 'btn small', type: 'button', onclick: use('left')}, t('opt.useLeft')),
 						h('button', {class: 'btn small', type: 'button', onclick: use('right')}, t('opt.useRight')),
@@ -1060,7 +1059,7 @@
 							'div',
 							{class: 'list-item'},
 							kind === 'players' && f.avatar ? h('img', {src: f.avatar, alt: ''}) : null,
-							h('a', {class: 'grow', href: url, target: '_blank', rel: 'noopener'}, '★ ' + f.name),
+							h('a', {class: 'grow', href: url, target: '_blank', rel: 'noopener'}, f.name),
 							note,
 							h(
 								'button',
@@ -1099,7 +1098,7 @@
 						'div',
 						{class: 'list-item'},
 						p.avatar ? h('img', {src: p.avatar, alt: ''}) : null,
-						h('a', {class: 'grow', href: 'https://beatleader.com/u/' + encodeURIComponent(p.id), target: '_blank', rel: 'noopener'}, '🔔 ' + (p.name || p.id)),
+						h('a', {class: 'grow', href: 'https://beatleader.com/u/' + encodeURIComponent(p.id), target: '_blank', rel: 'noopener'}, p.name || p.id),
 						h('span', {class: 'muted'}, p.id),
 						h('button', {class: 'btn small danger', type: 'button', onclick: () => send('unfollow', {playerId: p.id}).catch(e => alert(e.message))}, t('site.unfollow'))
 					)
@@ -1215,7 +1214,7 @@
 								downloadJson(data, 'beatleaderplus-config-' + new Date().toISOString().slice(0, 10) + '.json');
 							},
 						},
-						'⬇ ' + t('common.export')
+						t('common.export')
 					)
 				)
 			);
@@ -1243,7 +1242,7 @@
 								}
 							},
 						},
-						'⬆ ' + t('common.import')
+						t('common.import')
 					)
 				)
 			);
