@@ -278,26 +278,6 @@ select {
 	font-variant-numeric: tabular-nums;
 }
 
-.tabs {
-	display: flex;
-	gap: 4px;
-}
-
-.tab {
-	font: 600 11px/1 system-ui, sans-serif;
-	color: var(--muted);
-	background: none;
-	border: 1px solid transparent;
-	border-radius: 999px;
-	padding: 4px 9px;
-	cursor: pointer;
-}
-
-.tab.active {
-	color: #fff;
-	border-color: var(--primary);
-}
-
 .empty {
 	color: var(--muted);
 	font-size: 12px;
