@@ -816,7 +816,7 @@
 						h('span', {class: 'grow', title: items}, entry.title || key),
 						h('span', {class: 'muted'}, t('opt.bookmarksFor', {n: (entry.items || []).length})),
 						entry.url || entry.scoreId
-							? h('a', {class: 'btn small', href: entry.url || U.buildEnhancedReplayUrl({scoreId: entry.scoreId}, state.global), target: '_blank', rel: 'noopener'}, t('common.open'))
+							? h('a', {class: 'btn small', href: entry.url || U.replayUrl({scoreId: entry.scoreId}), target: '_blank', rel: 'noopener'}, t('common.open'))
 							: null,
 						h(
 							'button',
@@ -1152,7 +1152,7 @@
 					rl.appendChild(
 						h(
 							'a',
-							{class: 'list-item', href: U.buildEnhancedReplayUrl({scoreId: s.scoreId}, state.global), target: '_blank', rel: 'noopener'},
+							{class: 'list-item', href: U.replayUrl({scoreId: s.scoreId}), target: '_blank', rel: 'noopener'},
 							h('span', {class: 'grow'}, s.playerName + ' · ' + s.song + (s.difficulty ? ' (' + s.difficulty + ')' : '')),
 							h('span', {class: 'muted'}, s.accuracy != null ? (s.accuracy * 100).toFixed(2) + '%' : '')
 						)

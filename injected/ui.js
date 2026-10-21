@@ -118,6 +118,31 @@
 		);
 	};
 
+	/* Controls for the replayer's own settings (BLPR.official): they change the same setting as its
+	   own menu, so either one can be used and both always show the same value. */
+
+	ui.officialToggle = (key, text, title) => ui.toggle(text, !!R.official.get(key), v => R.official.set(key, v), title);
+
+	ui.officialRange = function (key, text, opts = {}, title) {
+		const input = R.official.input(key);
+		const num = (v, fallback) => (isFinite(parseFloat(v)) ? parseFloat(v) : fallback);
+		const el = ui.range(
+			text,
+			{
+				min: num(input && input.min, opts.min),
+				max: num(input && input.max, opts.max),
+				step: num(input && input.step, opts.step),
+				value: num(R.official.get(key), num(opts.value, opts.min)),
+				unit: opts.unit,
+			},
+			v => R.official.set(key, v),
+			title
+		);
+		// e.g. "X rotation offset" is unused while "Force look upright" is on.
+		if (input && input.disabled) el.querySelector('input').disabled = true;
+		return el;
+	};
+
 	ui.input = function (value, opts = {}) {
 		return isolateKeys(
 			h('input', {

@@ -31,6 +31,8 @@
 		lastKnownSpeed: null,
 		restoredFor: null,
 		tl: null,
+		officialSlow: false,
+		officialSlowOffAt: 0,
 	};
 
 	const cfg = () => R.settings.playback;
@@ -227,8 +229,50 @@
 	}
 
 	function officialSlowMoOn() {
-		const os = ctx.officialSettings();
-		return !!(os && os.settings && os.settings.autoSpeedControls);
+		return !!R.official.get('autoSpeedControls');
+	}
+
+	/**
+	 * Low-accuracy cuts only add to the replayer's own "Change speed around mistakes", so turning
+	 * the BL+ option on turns that on too, and turning it off in the replayer's Playback tab turns
+	 * the BL+ option off.
+	 */
+	function syncOfficialSlowMo() {
+		if (!R.active() || !cfg().slowOnLowAcc || officialSlowMoOn()) return;
+		if (Date.now() - pb.officialSlowOffAt < 3000) return; // just turned off there; ours follows
+		R.official.set('autoSpeedControls', true);
+	}
+
+	function onOfficialSettings(s) {
+		const on = !!s.autoSpeedControls;
+		if (pb.officialSlow && !on && cfg().slowOnLowAcc && R.active()) {
+			pb.officialSlowOffAt = Date.now();
+			R.setPath('playback.slowOnLowAcc', false);
+		}
+		pb.officialSlow = on;
+	}
+
+	/* ------------------------------------------------------------------ pause at mistakes */
+
+	function onNote(evt) {
+		const p = cfg();
+		if (!p.pauseOnMistakes || !p.pauseOn || !p.pauseOn[evt.kind] || !R.api.isPlaying()) return;
+		if (pb.reverse.active || R.api.seekBusy()) return;
+		R.api.pause();
+		const label = {miss: 'r.pausedMiss', bad: 'r.pausedBad', bomb: 'r.pausedBomb', wall: 'r.pausedWall'}[evt.kind];
+		R.api.notify(t(label, {time: fmt(evt.note.time)}), 'fas fa-pause');
+	}
+
+	/* ------------------------------------------------------------------ speed buttons */
+
+	/** "0.5, 0.75, 1" → [0.5, 0.75, 1] (the replayer's speed range is 0–2). */
+	function speedList() {
+		const seen = new Set();
+		return String(cfg().speedButtons || '')
+			.split(/[,;\s]+/)
+			.map(x => parseFloat(x.replace(/x$/i, '')))
+			.filter(v => isFinite(v) && v > 0 && v <= 2 && !seen.has(v) && seen.add(v))
+			.slice(0, 8);
 	}
 
 	/* ------------------------------------------------------------------ remembered speed & JD */
@@ -328,12 +372,27 @@
 				L.a !== null ? ui.h('span', {class: 'blp-r-hint blp-r-inline'}, fmt(L.a) + (L.b !== null ? ' → ' + fmt(L.b) : '')) : null
 			)
 		);
+		const speeds = speedList();
+		if (speeds.length) {
+			const now = R.api.getSpeed();
+			body.appendChild(ui.row(...speeds.map(v => ui.button(v + 'x', () => (R.api.setSpeed(v), refreshUi()), {active: Math.abs(now - v) < 1e-3, title: t('r.setSpeed', {v})}))));
+		}
+		body.appendChild(ui.toggle(t('f.playback.pauseOnMistakes'), s.pauseOnMistakes, v => R.setPath('playback.pauseOnMistakes', v)));
+		if (s.pauseOnMistakes) {
+			const grid = ui.h('div', {class: 'blp-r-grid'});
+			for (const kind of ['miss', 'bad', 'bomb', 'wall']) grid.appendChild(ui.toggle(t('f.playback.pauseOn.' + kind), s.pauseOn[kind], v => R.setPath('playback.pauseOn.' + kind, v)));
+			body.appendChild(grid);
+		}
 		body.appendChild(ui.toggle(t('f.playback.persistSpeed'), s.persistSpeed, v => R.setPath('playback.persistSpeed', v)));
 		body.appendChild(ui.toggle(t('f.playback.persistJd'), s.persistJd, v => R.setPath('playback.persistJd', v)));
-		body.appendChild(ui.toggle(t('f.playback.slowOnLowAcc'), s.slowOnLowAcc, v => R.setPath('playback.slowOnLowAcc', v), t('d.playback.slowOnLowAcc')));
+		body.appendChild(
+			ui.toggle(t('f.playback.slowOnLowAcc'), s.slowOnLowAcc, v => {
+				R.setPath('playback.slowOnLowAcc', v);
+				if (v) R.official.set('autoSpeedControls', true);
+			})
+		);
 		if (s.slowOnLowAcc) {
 			body.appendChild(ui.range(t('f.playback.lowAccThreshold'), {min: 60, max: 115, step: 1, value: s.lowAccThreshold}, v => R.setPath('playback.lowAccThreshold', v)));
-			if (!officialSlowMoOn()) body.appendChild(ui.hint(t('r.slowmoOff')));
 		}
 	}
 
@@ -383,6 +442,7 @@
 				pb.bookmarks = {key: null, title: '', scoreId: null, items: []};
 				pb.restoredFor = null;
 			});
+			R.on('note', onNote);
 			R.addHotkey('frameBack', () => frameStep(-1), {repeat: true});
 			R.addHotkey('frameForward', () => frameStep(1), {repeat: true});
 			R.addHotkey('reverse', toggleReverse);
@@ -405,12 +465,16 @@
 		},
 		onReady() {
 			pb.lastKnownSpeed = R.api.getSpeed();
+			pb.officialSlow = officialSlowMoOn();
+			R.official.onChange(onOfficialSettings);
+			syncOfficialSlowMo();
 			hookOfficialSlowMo();
 			if (R.api.isPlaying()) restoreSpeedAndJd();
 		},
 		onSettings() {
 			if (!ctx) return;
 			if (!R.active()) stopReverse();
+			syncOfficialSlowMo();
 			hookOfficialSlowMo();
 			drawTimeline();
 		},

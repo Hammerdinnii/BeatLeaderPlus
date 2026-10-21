@@ -359,6 +359,48 @@
 		R.emit('speed', {value: v, internal});
 	};
 
+	/* ------------------------------------------------------------------ the replayer's own settings */
+
+	/**
+	 * Read and change the replayer's own settings (its `settings` component, saved in its
+	 * localStorage). Changes go through its own menu control when there is one, the same way a
+	 * click does, so the official menu, its value labels and its saved settings stay in sync.
+	 */
+	const official = (R.official = {});
+	official.all = () => {
+		const os = R.ctx && R.ctx.officialSettings();
+		return (os && os.settings) || null;
+	};
+	official.get = key => {
+		const all = official.all();
+		return all ? all[key] : undefined;
+	};
+	official.input = key => {
+		const el = document.getElementById(key);
+		return el && el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'range') ? el : el && el.tagName === 'SELECT' ? el : null;
+	};
+	official.set = function (key, value) {
+		const input = official.input(key);
+		if (input && input.type === 'checkbox') {
+			if (input.checked === !!value) return;
+			input.checked = !!value;
+		} else if (input) {
+			if (String(input.value) === String(value)) return;
+			input.value = value;
+		}
+		if (input) {
+			input.dispatchEvent(new Event('input', {bubbles: true}));
+			input.dispatchEvent(new Event('change', {bubbles: true}));
+			return;
+		}
+		const os = R.ctx && R.ctx.officialSettings();
+		if (!os || !os.settings || os.settings[key] === value) return;
+		os.settings[key] = value;
+		os.sync();
+	};
+	/** fn(settings) after any change to the replayer's own settings. */
+	official.onChange = fn => R.ctx && R.ctx.scene.addEventListener('settingsChanged', e => fn((e.detail && e.detail.settings) || official.all() || {}));
+
 	api.getJd = () => {
 		const el = document.getElementById('jd');
 		return el && el.value ? Number(el.value) : null;

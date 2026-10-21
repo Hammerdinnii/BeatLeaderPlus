@@ -6,6 +6,7 @@
  *             flies with W A S D and X / C). BLP adds a move-speed setting (wasd acceleration),
  *             Shift-to-sprint, pointer-lock look and a field-of-view setting.
  *   pov       the official first-person camera (toggled through camera-mover / .povswitch).
+ *             BLP adds head smoothing, height / side offsets and a level horizon to it.
  *
  * and adds what it lacks:
  *   orbit     circles the player's head or the play-space center
@@ -17,6 +18,8 @@
  * the official camera takes over again it continues from the final orientation.
  *
  * UI: a compact block under "Main camera" in the replayer's camera menu, plus a "BL+" camera tab.
+ * The tab starts with the replayer's own first-person and orthographic camera settings, mirrored
+ * (changing them here changes them in its FPV / Ortho tabs too), followed by BLP's additions.
  * URL parameters: blpCam=<preset id|name>, blpMode=<mode>, blpPath=<packed path>.
  */
 (function () {
@@ -45,6 +48,7 @@
 		follow: {yaw: null},
 		trans: null,
 		path: {list: [], current: null, playing: false, playStart: 0, recording: false, lastSample: 0, saveTimer: null},
+		switchingPov: false,
 	};
 
 	/* ------------------------------------------------------------------ helpers */
@@ -174,22 +178,87 @@
 
 	/* ------------------------------------------------------------------ POV */
 
+	const isPov = () => {
+		const cm = ctx && ctx.cameraMover();
+		return !!(cm && cm.pov);
+	};
+
+	/** Keep our mode in step when the replayer's own FPV button or Shift+F switches cameras. */
+	function onPovChanged(e) {
+		if (cam.switchingPov) return; // our own enterPov / exitPov
+		const pov = !!(e.detail && e.detail.newPov);
+		if (pov && cam.mode !== 'pov') setMode('pov', {silent: true});
+		else if (!pov && cam.mode === 'pov') setMode('default', {silent: true});
+		else refreshUi();
+	}
+
+	// The replayer moves its first-person rig in replay-player.movementsTock(), easing towards the
+	// head with a fixed rate of 5 × delta. Wrapping it lets BLP scale that delta (smoothing) and add
+	// offsets around the call, so the replayer's own easing always sees its own position.
+	function smoothingDelta(delta, smoothing) {
+		const s = U.clamp(Number(smoothing), 0, 100);
+		if (!(s > 0)) return 200; // 5 × 0.2 s = 1: exactly on the head
+		return Math.min(200, delta * Math.pow(2, (50 - s) / 16.67)); // 50 % = the replayer's own
+	}
+
+	function hookPovCamera() {
+		const rp = ctx.replayPlayer();
+		if (!rp || rp.__blpPovHooked || typeof rp.movementsTock !== 'function') return;
+		const orig = rp.movementsTock;
+		rp.movementsTock = function (frame, nextFrame, height, slerpValue, delta) {
+			const rig = this.povCameraRig && this.povCameraRig.object3D;
+			if (!rig) return orig.apply(this, arguments);
+			const ud = rig.userData;
+			if (ud.__blpOff) rig.position.sub(ud.__blpOff);
+			const f = R.active() ? settings().fpv : null;
+			const result = orig.call(this, frame, nextFrame, height, slerpValue, f ? smoothingDelta(delta, f.smoothing) : delta);
+			if (!f) {
+				ud.__blpOff = null;
+				return result;
+			}
+			const off = ud.__blpOff || (ud.__blpOff = new THREE.Vector3());
+			off.set(0, Number(f.height) || 0, 0);
+			const side = Number(f.side) || 0;
+			if (side) {
+				// The rig looks down its -Z axis; offset along its horizontal right-hand side.
+				const fwd = rig.getWorldDirection(tmp.v4).negate();
+				const right = tmp.v5.crossVectors(fwd, tmp.up);
+				if (right.lengthSq() > 1e-8) off.addScaledVector(right.normalize(), side);
+			}
+			rig.position.add(off);
+			if (f.levelHorizon) rig.rotation.z = Math.PI; // the replayer sets z = π − head roll
+			return result;
+		};
+		rp.__blpPovHooked = true;
+	}
+
 	function enterPov() {
 		const cm = ctx.cameraMover();
 		if (!cm || cm.pov) return;
-		const sw = document.querySelector('.povswitch');
-		if (sw) sw.click();
-		else if (cm.defaultCamera && cm.povCamera) {
-			cm.defaultCamera.setAttribute('camera', 'active', false);
-			cm.povCamera.setAttribute('camera', 'active', true);
-			cm.pov = true;
-			ctx.scene.emit('povchanged', {newPov: true}, false);
+		cam.switchingPov = true;
+		try {
+			const sw = document.querySelector('.povswitch');
+			if (sw) sw.click();
+			else if (cm.defaultCamera && cm.povCamera) {
+				cm.defaultCamera.setAttribute('camera', 'active', false);
+				cm.povCamera.setAttribute('camera', 'active', true);
+				cm.pov = true;
+				ctx.scene.emit('povchanged', {newPov: true}, false);
+			}
+		} finally {
+			cam.switchingPov = false;
 		}
 	}
 
 	function exitPov() {
 		const cm = ctx.cameraMover();
-		if (cm && cm.pov && cm.disablePovIfNeeded) cm.disablePovIfNeeded();
+		if (!cm || !cm.pov || !cm.disablePovIfNeeded) return;
+		cam.switchingPov = true;
+		try {
+			cm.disablePovIfNeeded();
+		} finally {
+			cam.switchingPov = false;
+		}
 	}
 
 	/* ------------------------------------------------------------------ modes */
@@ -681,7 +750,8 @@
 		const ui = R.ui;
 		body.appendChild(
 			ui.row(
-				...['orbit', 'follow'].map(m => ui.button(t('cam.mode.' + m), () => setMode(cam.mode === m ? 'default' : m), {active: cam.mode === m}))
+				...['orbit', 'follow'].map(m => ui.button(t('cam.mode.' + m), () => setMode(cam.mode === m ? 'default' : m), {active: cam.mode === m})),
+				ui.button(t('cam.mode.pov'), () => setMode(isPov() ? 'default' : 'pov'), {active: isPov(), title: t('r.fpvToggleHint')})
 			)
 		);
 		const presetOptions = [{value: '', label: t('r.presetSelect')}].concat(presets().map(p => ({value: p.id, label: p.name + (p.hotkey ? ' (' + U.formatHotkey(p.hotkey) + ')' : '')})));
@@ -702,6 +772,37 @@
 			);
 		}
 		body.appendChild(ui.hint(t('r.cameraMore')));
+	}
+
+	/** The replayer's own first-person settings (its FPV tab), then BLP's additions. */
+	function renderFpvSection(body) {
+		const ui = R.ui;
+		const f = settings().fpv;
+		const setF = (key, v) => R.setPath('camera.fpv.' + key, v);
+		body.appendChild(ui.toggle(t('r.fpvCamera'), isPov(), v => setMode(v ? 'pov' : 'default'), t('r.fpvToggleHint')));
+		body.appendChild(ui.officialRange('fov', t('r.fpvFov'), {min: 30, max: 150, step: 1, unit: '°'}));
+		body.appendChild(ui.officialRange('cameraZPosition', t('r.fpvZ'), {min: -5, max: 5, step: 0.1, unit: 'm'}));
+		body.appendChild(ui.officialRange('cameraXRotation', t('r.fpvXRot'), {min: -100, max: 100, step: 1, unit: '°'}));
+		body.appendChild(ui.range(t('f.camera.fpv.height'), {min: -1, max: 1, step: 0.05, value: f.height, unit: 'm'}, v => setF('height', v)));
+		body.appendChild(ui.range(t('f.camera.fpv.side'), {min: -1, max: 1, step: 0.05, value: f.side, unit: 'm'}, v => setF('side', v)));
+		body.appendChild(ui.range(t('f.camera.fpv.smoothing'), {min: 0, max: 100, step: 1, value: f.smoothing, unit: '%'}, v => setF('smoothing', v), t('d.camera.fpv.smoothing')));
+		body.appendChild(ui.officialToggle('forceForwardLookDirection', t('r.fpvUpright')));
+		body.appendChild(ui.toggle(t('f.camera.fpv.levelHorizon'), f.levelHorizon, v => setF('levelHorizon', v), t('d.camera.fpv.levelHorizon')));
+		body.appendChild(ui.officialToggle('saveFpvToggle', t('r.fpvRemember')));
+	}
+
+	const ORTHO_VIEWS = ['Top', 'Right', 'Back'];
+
+	/** The replayer's own orthographic views (its Ortho tab). */
+	function renderOrthoSection(body) {
+		const ui = R.ui;
+		for (const view of ORTHO_VIEWS) {
+			const key = 'orthographic' + view;
+			body.appendChild(ui.officialToggle(key + 'Enabled', t('r.ortho' + view)));
+			if (!R.official.get(key + 'Enabled')) continue;
+			body.appendChild(ui.officialRange(key + 'Frustum', t('r.orthoZoom'), {min: 0.5, max: 5, step: 0.01}));
+			body.appendChild(ui.officialRange(key + 'Far', t('r.orthoFar'), {min: 0.1, max: 50, step: 0.1, unit: 'm'}));
+		}
 	}
 
 	function renderFreeSection(body) {
@@ -822,6 +923,11 @@
 				if (el) el.addEventListener('click', () => DRIVEN.has(cam.mode) && setMode('default', {silent: true}), true);
 			});
 
+			c.scene.addEventListener('povchanged', onPovChanged);
+			// Mirrored official settings: re-render when they change in the replayer's own menus.
+			R.official.onChange(U.debounce(refreshUi, 100));
+			hookPovCamera();
+
 			R.addHotkey('cycleCamera', cycleMode);
 			R.addHotkey('pathPlay', togglePath);
 			R.addHotkey('pathRecord', startRecording);
@@ -832,6 +938,8 @@
 			R.onCommand('applyPreset', ({id}) => applyPreset(findPreset(id)));
 
 			R.ui.addCameraSection({id: 'quick', placement: 'quick', order: 0, render: renderQuick});
+			R.ui.addCameraSection({id: 'fpv', order: 1, title: () => t('r.fpvSection'), render: renderFpvSection});
+			R.ui.addCameraSection({id: 'ortho', order: 2, title: () => t('r.orthoSection'), render: renderOrthoSection});
 			R.ui.addCameraSection({id: 'free', order: 10, title: () => t('h.cameraFree'), render: renderFreeSection});
 			R.ui.addCameraSection({id: 'modes', order: 20, title: () => t('cam.mode.orbit') + ' / ' + t('cam.mode.follow'), render: renderModesSection});
 			R.ui.addCameraSection({id: 'presets', order: 30, title: () => t('r.presets'), render: renderPresetsSection});
@@ -864,6 +972,7 @@
 		},
 		maintain() {
 			if (cam.mode !== 'path') applyFov();
+			hookPovCamera();
 		},
 	});
 })();
