@@ -4,7 +4,7 @@ A Manifest V3 Chrome extension that adds a customizable enhancement layer to [Be
 
 In the replay viewer, BeatLeaderPlus **extends the replayer's own interface** instead of adding a second one. There is no floating panel or extra HUD. New options appear as a **BL+ tab** in the replayer's Settings menu, as an extra block and a **BL+ tab** in its Camera menu, and as extra entries in its right-click menu. Features build on what the replayer already does (its free camera, saber colors, "slow down on mistakes", hitsound volume and score HUD) rather than duplicating it.
 
-The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes and speed buttons; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, follows, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
+The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes, speed buttons and an FPS limit; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, follows, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
 
 > BeatLeaderPlus is an unofficial, fan-made extension. It is not affiliated with or endorsed by BeatLeader. The popup and the options page say so too.
 
@@ -45,7 +45,7 @@ Requires Chrome 111 or newer (or another Chromium-based browser).
 
 | Replayer menu | What BeatLeaderPlus adds |
 | --- | --- |
-| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Performance, Extra hitsounds, Export, Score HUD and Interface sections |
+| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Performance (FPS limit), Extra hitsounds, Export, Score HUD and Interface sections |
 | **Camera → Main** tab | A BeatLeaderPlus block under the official left/center/right buttons: Orbit, Smooth follow, First person, a preset picker, "save as preset" and the camera path picker |
 | **Camera → BL+** tab | First person and orthographic views first (the replayer's own settings, mirrored, plus BL+ additions), then free camera tuning, orbit/follow options, the preset list and camera path tools |
 | **Right-click menu** | "Copy URL with BL+ camera and colors", "Screenshot" and "Record clip", next to the official "Copy URL" entries |
@@ -86,7 +86,7 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 - **Reverse playback** (`Z`), with a configurable scrub rate and speed.
 - **A-B section loop** (`T` sets A, then B, then clears it; `Shift+T` clears), with optional pre-roll.
 - **Bookmarks with notes** (`B` to add, `Shift+B` to jump to the next one). They're saved per replay, shown on the timeline and listed in Settings → BL+ and on the options page.
-- **Low-accuracy cuts in the official slow motion**: cuts below a score threshold get the same slow-down windows as misses and bad cuts. Turning this on also turns on the replayer's own "change speed around mistakes" (whose speed and offsets are used); turning that off in the replayer turns this off too.
+- **Low-accuracy cuts in the official slow motion**: cuts below a score threshold get the same slow-down windows as misses and bad cuts. This switch and the replayer's own "change speed around mistakes" (whose speed and offsets are used) work as one: turning either one on or off turns both on or off.
 - **Pause at mistakes**: stops playback at each miss, bad cut, bomb hit or wall hit (each can be switched on or off).
 - **Speed buttons** in Settings → BL+ → Playback for quick speed changes (default 0.5×, 0.75×, 1×, 1.25×; the list is configurable).
 - **FPS limit** in Settings → BL+ → Performance (30 to 240 fps, or no limit): how many frames per second the replay viewer draws. A lower limit saves power and keeps laptops cooler. Only drawing is limited, so the replay, hitsounds and slow motion keep their timing. The section shows how many frames are actually drawn.
