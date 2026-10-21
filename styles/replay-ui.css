@@ -1,0 +1,377 @@
+/*
+ * BeatLeaderPlus – styles for the additions to the replayer's own interface.
+ *
+ * BeatLeaderPlus reuses the replayer's markup and classes (.toggleButton, .switch, .settingRange,
+ * .settingButton, .tab-button, .menuitem, …) so it inherits their look. The rules below only fill
+ * the gaps: layout inside the BL+ tabs (the replayer's panes are sized for a few short rows),
+ * lists and button rows, the timeline markers and the screen flash. Every selector is
+ * scoped to blp-r-* / #blp* ids so nothing of the replayer changes.
+ */
+
+:root {
+	--blpr-text: #ececf4;
+	--blpr-muted: #a8a8ba;
+	--blpr-accent: rgba(142, 84, 233, 0.7); /* replayer's active tab colour */
+	--blpr-border: rgba(255, 255, 255, 0.12);
+	--blpr-bad: #ff5370;
+	--blpr-bookmark: #ffc93c;
+	--blpr-loop: #40c4ff;
+}
+
+/* ---------------------------------------------------------------- disabled / hidden states */
+
+.blp-r-disabled #blpSettingsTab,
+.blp-r-disabled #blpCameraTab,
+.blp-r-disabled #blpCameraQuick,
+.blp-r-disabled .blp-r-menuitem,
+.blp-r-overlays-hidden .blp-r-timeline-marks {
+	display: none !important;
+}
+
+/* ---------------------------------------------------------------- BL+ tabs */
+
+.blp-r-tab-button i {
+	font-size: 0.85em;
+}
+
+/* The settings menu has no height limit; our pane holds several sections, so scroll it. */
+#blpSettingsPane {
+	max-height: min(62vh, 520px);
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding-right: 4px;
+	scrollbar-width: thin;
+}
+
+#blpCameraPane {
+	width: auto;
+	min-width: 10em;
+	max-height: min(62vh, 480px);
+	overflow-y: auto;
+	overflow-x: hidden;
+	text-align: left;
+	scrollbar-width: thin;
+}
+
+.blp-r-section {
+	margin-bottom: 8px;
+}
+
+.blp-r-section + .blp-r-section {
+	padding-top: 6px;
+	border-top: 1px solid var(--blpr-border);
+}
+
+.blp-r-header {
+	margin: 2px 0 5px;
+	color: #bdbdbd;
+	font-weight: 600;
+}
+
+.blp-r-hint {
+	margin: 0 0 6px;
+	color: var(--blpr-muted);
+	font-size: 10.5px;
+	line-height: 1.35;
+}
+
+.blp-r-hint.blp-r-inline {
+	display: inline;
+	margin: 0 0 0 4px;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.blp-r-pane .toggleButton,
+.blp-r-camera-quick .toggleButton {
+	margin: 3px 0;
+	text-align: left;
+}
+
+/* Labels in the replayer are fixed 30px boxes meant for one-word captions. */
+.blp-r-pane .toggleButtonLabel,
+.blp-r-camera-quick .toggleButtonLabel {
+	width: auto;
+	height: auto;
+	max-width: calc(100% - 44px);
+	vertical-align: middle;
+}
+
+.blp-r-pane .toggleButtonLabel nobr,
+.blp-r-camera-quick .toggleButtonLabel nobr {
+	white-space: normal;
+}
+
+.blp-r-range .toggleButtonContainer {
+	display: flex;
+	align-items: baseline;
+	gap: 4px;
+	height: auto;
+}
+
+.blp-r-range .blp-r-value {
+	max-width: none;
+	color: var(--blpr-muted);
+}
+
+.blp-r-pane input.settingRange,
+.blp-r-camera-quick input.settingRange {
+	width: 100%;
+	max-width: 220px;
+}
+
+.blp-r-color input[type='color'] {
+	width: 32px !important;
+	height: 18px;
+	padding: 0;
+	border: 1px solid var(--blpr-border);
+	border-radius: 3px;
+	background: transparent;
+	vertical-align: middle;
+	margin-left: 4px;
+	margin-right: 4px;
+}
+
+.blp-r-select select.settingButton {
+	display: block;
+	width: 100%;
+	max-width: 220px;
+	margin-top: 2px;
+	font-size: 11px;
+}
+
+.blp-r-btn {
+	margin: 2px 4px 2px 0;
+	font-size: 11px;
+	line-height: 1.2;
+}
+
+.blp-r-btn:hover:not(:disabled) {
+	background-color: #555;
+}
+
+.blp-r-btn.blp-r-active {
+	background-color: var(--blpr-accent);
+}
+
+.blp-r-btn .blp-r-icon {
+	font-size: 10px;
+}
+
+.blp-r-btn .blp-r-icon-text {
+	margin-right: 5px;
+}
+
+.blp-r-input {
+	width: 100% !important;
+	max-width: 220px;
+	box-sizing: border-box;
+	padding: 3px 5px !important;
+	border: 1px solid var(--blpr-border) !important;
+	border-radius: 4px !important;
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--blpr-text);
+	font-size: 11px;
+	cursor: text !important;
+}
+
+.blp-r-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px;
+	margin: 3px 0;
+}
+
+.blp-r-row > .toggleButton {
+	flex: 1 1 auto;
+	margin: 0;
+}
+
+.blp-r-grow {
+	flex: 1 1 auto;
+	text-align: left;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.blp-r-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0 6px;
+}
+
+.blp-r-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 3px 0;
+}
+
+.blp-r-list-item {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+}
+
+.blp-r-list-item .blp-r-btn {
+	margin: 0;
+}
+
+/* ---------------------------------------------------------------- saber model drop zone */
+
+.blp-r-drop {
+	margin: 4px 0 6px;
+	padding: 10px 8px;
+	border: 1px dashed rgba(255, 255, 255, 0.35);
+	border-radius: 5px;
+	background: rgba(255, 255, 255, 0.04);
+	text-align: center;
+	cursor: pointer;
+	outline: none;
+}
+
+.blp-r-drop:hover,
+.blp-r-drop:focus-visible,
+.blp-r-drop.blp-r-drop-over {
+	border-color: rgb(142, 84, 233);
+	background: rgba(142, 84, 233, 0.18);
+}
+
+.blp-r-drop-title {
+	margin-bottom: 2px;
+	color: var(--blpr-text);
+	font-size: 11px;
+}
+
+.blp-r-drop .blp-r-hint {
+	margin: 0;
+}
+
+.blp-r-drop-error .blp-r-hint {
+	color: var(--blpr-bad);
+}
+
+.blp-r-model-preview {
+	display: block;
+	width: 100%;
+	max-width: 220px;
+	height: auto;
+	aspect-ratio: 2 / 1;
+	margin: 6px auto 0;
+	pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- camera menu quick block */
+
+.blp-r-camera-quick {
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--blpr-border);
+	text-align: center;
+}
+
+.blp-r-camera-quick .blp-r-section {
+	margin-bottom: 4px;
+}
+
+.blp-r-camera-quick .blp-r-row {
+	justify-content: center;
+}
+
+.blp-r-camera-quick .blp-r-select select.settingButton {
+	margin: 2px auto 0;
+}
+
+/* ---------------------------------------------------------------- right-click menu */
+
+/* Same row height as the replayer's own items, whose icons are 24px SVGs. */
+.blp-r-menuitem .menuitem-icon {
+	width: 24px;
+	height: 27px;
+	text-align: center;
+}
+
+.blp-r-menuitem .menuitem-icon i {
+	font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- timeline markers */
+
+.blp-r-timeline-marks {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 2;
+}
+
+.blp-r-bookmark-mark {
+	position: absolute;
+	top: -7px;
+	width: 10px;
+	height: 10px;
+	margin-left: -5px;
+	background: var(--blpr-bookmark);
+	clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%);
+	cursor: pointer;
+	pointer-events: auto;
+	filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
+}
+
+.blp-r-loop-region {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	background: rgba(64, 196, 255, 0.25);
+	border-left: 2px solid var(--blpr-loop);
+	border-right: 2px solid var(--blpr-loop);
+}
+
+.blp-r-loop-region.blp-r-loop-open {
+	border-right: 0;
+	background: transparent;
+}
+
+/* ---------------------------------------------------------------- effects & error toasts */
+
+.blp-r-flash {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 2147481000;
+	opacity: 0;
+}
+
+.blp-r-toasts {
+	position: fixed;
+	left: 50%;
+	top: 18px;
+	transform: translateX(-50%);
+	z-index: 2147483000;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	pointer-events: none;
+}
+
+.blp-r-toast {
+	font: 500 13px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	color: #fff;
+	background: rgba(0, 0, 0, 0.85);
+	border: 1px solid var(--blpr-border);
+	border-radius: 5px;
+	padding: 8px 14px;
+	transition: opacity 0.4s, transform 0.4s;
+}
+
+.blp-r-toast-error {
+	border-color: var(--blpr-bad);
+}
+
+.blp-r-toast.blp-r-out {
+	opacity: 0;
+	transform: translateY(-6px);
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Mock Song | BeatLeader</title>
+		<style>
+			:root { --background: #222; --foreground: #252525; --textColor: #eee; --beatleader-primary: #eb008c; }
+			body { background: var(--background); color: var(--textColor); font-family: sans-serif; }
+			.player-score { display: flex; gap: 10px; padding: 8px; border-bottom: 1px solid #444; }
+			/* The site's score icon layout (src/components/Song/ScoreActionButtonsLayout.svelte). */
+			.large { display: inline-flex; flex-direction: row; align-items: center; flex-wrap: nowrap; grid-gap: 3px; }
+			.side-row { display: flex; grid-gap: 3px; }
+			.main-grid { display: flex; flex-wrap: wrap; grid-gap: 3px; max-width: 75px; width: max-content; }
+			.main-grid:not(:has(span > *:nth-child(5))) { max-width: 50px; }
+			.main-grid:not(:has(span > *:nth-child(4))) { max-width: 75px; }
+			.buttons-container > span { display: contents; pointer-events: all; }
+			.buttons-container > span > * { width: 22px !important; height: 22px !important; font-size: 12px !important; overflow: hidden !important; border-radius: 5px !important; display: flex !important; justify-content: center !important; align-items: center !important; text-align: center !important; }
+			.button.icon-btn { background: #dbdbdb; color: #444; opacity: 0.6; text-decoration: none; }
+		</style>
+	</head>
+	<body>
+		<nav class="ssr-page-container"><a href="/u/999">My profile</a></nav>
+		<main>
+			<div class="leaderboard">
+				<div class="player-score">
+					<div class="rank with-badge"><span class="badge" style="--color:white; --background-color:darkgoldenrod; ">#1</span></div>
+					<a href="/u/111">Alice</a>
+					<span class="clan-badges"><a href="/clan/BSFR"><span class="label">BSFR</span></a></span>
+					<span>98.50%</span><span>FC</span>
+					<a class="button" href="https://replay.beatleader.com/?scoreId=1001">Replay</a>
+				</div>
+				<div class="player-score">
+					<div class="rank with-badge"><span class="badge" style="--color:white; --background-color:#888; ">#2</span></div>
+					<a href="/u/222">Bob</a>
+					<span>93.20%</span>
+					<div class="score-action-buttons-layout large">
+						<div class="side-row buttons-container"><span></span></div>
+						<div class="main-grid buttons-container">
+							<span>
+								<a class="button icon-btn" href="https://beatsaver.com/maps/abc" title="BeatSaver">B</a>
+								<a class="button icon-btn" href="#oneclick" title="OneClick">1</a>
+								<a class="button icon-btn" href="#pin" title="Pin">P</a>
+								<a class="button icon-btn replay-button" href="https://replay.beatleader.com/?scoreId=1002" title="Replay">R</a>
+							</span>
+						</div>
+					</div>
+				</div>
+				<div class="player-score">
+					<div class="rank with-badge"><span class="badge" style="--color:white; --background-color:saddlebrown; ">#3</span></div>
+					<a href="/u/999">Me</a>
+					<span>96.00%</span>
+					<a class="button" href="https://replay.beatleader.com/?link=https://cdn.replays.beatleader.xyz/1003.bsor">Replay</a>
+				</div>
+			</div>
+			<a href="/leaderboard/global/abc123/1">Some other map</a>
+			<div class="other-players"><a href="/u/alice-cool">Alice</a> <a href="/u/333/scores/1?sortBy=pp">Carol</a></div>
+			<nav class="pagination"><ul class="pagination-list"><li><button class="pagination-link" onclick="window.__page=(window.__page||1)-1"><i class="fas fa-chevron-left"></i></button></li><li><button class="pagination-link" onclick="window.__page=(window.__page||1)+1"><i class="fas fa-chevron-right"></i></button></li></ul></nav>
+		</main>
+		<footer><a href="https://twitter.com/beatleader_">Twitter</a></footer>
+	</body>
+</html>

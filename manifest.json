@@ -1,0 +1,133 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "short_name": "BeatLeaderPlus",
+  "description": "__MSG_extDescription__",
+  "version": "1.0.0",
+  "default_locale": "en",
+  "minimum_chrome_version": "111",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "downloads",
+    "notifications",
+    "alarms",
+    "contextMenus",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "*://beatleader.com/*",
+    "*://*.beatleader.com/*",
+    "*://beatleader.xyz/*",
+    "*://*.beatleader.xyz/*",
+    "*://beatleader.net/*",
+    "*://*.beatleader.net/*",
+    "*://replay.beatleader.com/*",
+    "*://replay.beatleader.xyz/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "__MSG_extActionTitle__",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+B"
+      },
+      "description": "__MSG_cmdOpenPopup__"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://beatleader.com/*",
+        "*://*.beatleader.com/*",
+        "*://beatleader.xyz/*",
+        "*://*.beatleader.xyz/*",
+        "*://beatleader.net/*",
+        "*://*.beatleader.net/*"
+      ],
+      "exclude_matches": [
+        "*://api.beatleader.com/*",
+        "*://api.beatleader.xyz/*",
+        "*://api.beatleader.net/*"
+      ],
+      "js": [
+        "lib/i18n.js",
+        "lib/defaults.js",
+        "lib/utils.js",
+        "lib/storage.js",
+        "modules/theme.js",
+        "content-early.js"
+      ],
+      "css": [
+        "styles/theme.css",
+        "styles/replay-ui.css"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://beatleader.com/*",
+        "*://*.beatleader.com/*",
+        "*://beatleader.xyz/*",
+        "*://*.beatleader.xyz/*",
+        "*://beatleader.net/*",
+        "*://*.beatleader.net/*"
+      ],
+      "exclude_matches": [
+        "*://api.beatleader.com/*",
+        "*://api.beatleader.xyz/*",
+        "*://api.beatleader.net/*"
+      ],
+      "js": [
+        "modules/hotkeys.js",
+        "modules/site-enhancements.js",
+        "modules/site-profile-stats.js",
+        "modules/replay-bridge.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "lib/i18n.js",
+        "lib/utils.js",
+        "lib/unity-saber.js",
+        "injected/*.js",
+        "injected-replay.js"
+      ],
+      "matches": [
+        "*://beatleader.com/*",
+        "*://*.beatleader.com/*",
+        "*://beatleader.xyz/*",
+        "*://*.beatleader.xyz/*",
+        "*://beatleader.net/*",
+        "*://*.beatleader.net/*"
+      ]
+    }
+  ]
+}
