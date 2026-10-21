@@ -145,6 +145,20 @@
 		});
 	}
 
+	/**
+	 * The replayer hides its control bar (and the menus in it) while a replay plays and the mouse is
+	 * idle. Menus opened from a hotkey or the popup report user activity the way its own
+	 * user-gesture component does, so they are visible; its normal idle timer takes over again on
+	 * the next mouse movement.
+	 */
+	function revealControls() {
+		if (document.body.classList.contains('showControls')) return;
+		const scene = R.ctx && R.ctx.scene;
+		const gesture = scene && scene.components && scene.components['user-gesture'];
+		if (gesture && typeof gesture.changeUserActive === 'function') gesture.changeUserActive(true);
+		else if (scene) scene.emit('useractive', {isActive: true}, false);
+	}
+
 	/* ------------------------------------------------------------------ Settings → BL+ tab */
 
 	const settingsSections = [];
@@ -210,6 +224,7 @@
 	/** Open Settings → BL+ (optionally scrolled to a section). */
 	ui.openSettings = function (sectionId) {
 		if (!installSettingsTab()) return false;
+		revealControls();
 		document.getElementById('settingsContainer').classList.add('settingsActive');
 		selectTab('settings-tab-button', 'settings-tab-pane', settingsTab.button, 'changeTab');
 		renderSettingsPane();
@@ -297,6 +312,7 @@
 
 	ui.openCameraTab = function () {
 		if (!installCameraUi()) return false;
+		revealControls();
 		document.getElementById('cameraSettingsContainer').classList.add('settingsActive');
 		selectTab('camera-tab-button', 'camera-tab-pane', cameraUi.button, 'changeCameraTab');
 		renderCamera();
