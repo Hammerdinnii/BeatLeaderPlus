@@ -4,7 +4,7 @@
  * BeatLeaderPlus reuses the replayer's markup and classes (.toggleButton, .switch, .settingRange,
  * .settingButton, .tab-button, .menuitem, …) so it inherits their look. The rules below only fill
  * the gaps: layout inside the BL+ tabs (the replayer's panes are sized for a few short rows),
- * lists and button rows, the timeline graph/markers and the screen flash. Every selector is
+ * lists and button rows, the timeline markers and the screen flash. Every selector is
  * scoped to blp-r-* / #blp* ids so nothing of the replayer changes.
  */
 
@@ -24,7 +24,6 @@
 .blp-r-disabled #blpCameraTab,
 .blp-r-disabled #blpCameraQuick,
 .blp-r-disabled .blp-r-menuitem,
-.blp-r-overlays-hidden .blp-r-timeline-graph,
 .blp-r-overlays-hidden .blp-r-timeline-marks {
 	display: none !important;
 }
@@ -236,9 +235,239 @@
 
 /* ---------------------------------------------------------------- right-click menu */
 
-.blp-r-menuitem .menuitem-icon i {
-	width: 1em;
+/* Same row height as the replayer's own items, whose icons are 24px SVGs. */
+.blp-r-menuitem .menuitem-icon {
+	width: 24px;
+	height: 27px;
 	text-align: center;
+}
+
+.blp-r-menuitem .menuitem-icon i {
+	font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- timeline markers */
+
+.blp-r-timeline-marks {
+	display: none !important;
+}
+
+/* ---------------------------------------------------------------- BL+ tabs */
+
+.blp-r-tab-button i {
+	font-size: 0.85em;
+}
+
+/* The settings menu has no height limit; our pane holds several sections, so scroll it. */
+#blpSettingsPane {
+	max-height: min(62vh, 520px);
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding-right: 4px;
+	scrollbar-width: thin;
+}
+
+#blpCameraPane {
+	width: auto;
+	min-width: 10em;
+	max-height: min(62vh, 480px);
+	overflow-y: auto;
+	overflow-x: hidden;
+	text-align: left;
+	scrollbar-width: thin;
+}
+
+.blp-r-section {
+	margin-bottom: 8px;
+}
+
+.blp-r-section + .blp-r-section {
+	padding-top: 6px;
+	border-top: 1px solid var(--blpr-border);
+}
+
+.blp-r-header {
+	margin: 2px 0 5px;
+	color: #bdbdbd;
+	font-weight: 600;
+}
+
+.blp-r-hint {
+	margin: 0 0 6px;
+	color: var(--blpr-muted);
+	font-size: 10.5px;
+	line-height: 1.35;
+}
+
+.blp-r-hint.blp-r-inline {
+	display: inline;
+	margin: 0 0 0 4px;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.blp-r-pane .toggleButton,
+.blp-r-camera-quick .toggleButton {
+	margin: 3px 0;
+	text-align: left;
+}
+
+/* Labels in the replayer are fixed 30px boxes meant for one-word captions. */
+.blp-r-pane .toggleButtonLabel,
+.blp-r-camera-quick .toggleButtonLabel {
+	width: auto;
+	height: auto;
+	max-width: calc(100% - 44px);
+	vertical-align: middle;
+}
+
+.blp-r-pane .toggleButtonLabel nobr,
+.blp-r-camera-quick .toggleButtonLabel nobr {
+	white-space: normal;
+}
+
+.blp-r-range .toggleButtonContainer {
+	display: flex;
+	align-items: baseline;
+	gap: 4px;
+	height: auto;
+}
+
+.blp-r-range .blp-r-value {
+	max-width: none;
+	color: var(--blpr-muted);
+}
+
+.blp-r-pane input.settingRange,
+.blp-r-camera-quick input.settingRange {
+	width: 100%;
+	max-width: 220px;
+}
+
+.blp-r-color input[type='color'] {
+	width: 32px !important;
+	height: 18px;
+	padding: 0;
+	border: 1px solid var(--blpr-border);
+	border-radius: 3px;
+	background: transparent;
+	vertical-align: middle;
+	margin-left: 4px;
+	margin-right: 4px;
+}
+
+.blp-r-select select.settingButton {
+	display: block;
+	width: 100%;
+	max-width: 220px;
+	margin-top: 2px;
+	font-size: 11px;
+}
+
+.blp-r-btn {
+	margin: 2px 4px 2px 0;
+	font-size: 11px;
+	line-height: 1.2;
+}
+
+.blp-r-btn:hover:not(:disabled) {
+	background-color: #555;
+}
+
+.blp-r-btn.blp-r-active {
+	background-color: var(--blpr-accent);
+}
+
+.blp-r-input {
+	width: 100% !important;
+	max-width: 220px;
+	box-sizing: border-box;
+	padding: 3px 5px !important;
+	border: 1px solid var(--blpr-border) !important;
+	border-radius: 4px !important;
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--blpr-text);
+	font-size: 11px;
+	cursor: text !important;
+}
+
+.blp-r-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px;
+	margin: 3px 0;
+}
+
+.blp-r-row > .toggleButton {
+	flex: 1 1 auto;
+	margin: 0;
+}
+
+.blp-r-grow {
+	flex: 1 1 auto;
+	text-align: left;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.blp-r-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0 6px;
+}
+
+.blp-r-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 3px 0;
+}
+
+.blp-r-list-item {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+}
+
+.blp-r-list-item .blp-r-btn {
+	margin: 0;
+}
+
+/* ---------------------------------------------------------------- camera menu quick block */
+
+.blp-r-camera-quick {
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--blpr-border);
+	text-align: center;
+}
+
+.blp-r-camera-quick .blp-r-section {
+	margin-bottom: 4px;
+}
+
+.blp-r-camera-quick .blp-r-row {
+	justify-content: center;
+}
+
+.blp-r-camera-quick .blp-r-select select.settingButton {
+	margin: 2px auto 0;
+}
+
+/* ---------------------------------------------------------------- right-click menu */
+
+/* Same row height as the replayer's own items, whose icons are 24px SVGs. */
+.blp-r-menuitem .menuitem-icon {
+	width: 24px;
+	height: 27px;
+	text-align: center;
+}
+
+.blp-r-menuitem .menuitem-icon i {
+	font-size: 14px;
 }
 
 /* ---------------------------------------------------------------- timeline graph & markers */

@@ -12,7 +12,6 @@
  *   - low-accuracy cuts as an extra trigger for the replayer's own slow motion (its
  *     computeMissWindows() is wrapped; its speed and offsets are used)
  *   - remembered speed / jump distance across sessions
- *   - an accuracy graph above the replayer's timeline
  *
  * Controls live in Settings → BL+ ("Playback" and "Timeline" sections).
  */
@@ -257,21 +256,19 @@
 		}, 250);
 	}
 
-	/* ------------------------------------------------------------------ timeline graph & markers */
+	/* ------------------------------------------------------------------ timeline markers */
 
+	// Bookmarks and the loop region sit on top of the replayer's own timeline (which already draws
+	// the accuracy graph and mistake markers).
 	function ensureTimeline() {
 		const host = document.getElementById('timeline');
 		if (!host) return null;
-		if (pb.tl && pb.tl.host === host && pb.tl.canvas.isConnected) return pb.tl;
+		if (pb.tl && pb.tl.host === host && pb.tl.marks.isConnected) return pb.tl;
 		if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-		const canvas = document.createElement('canvas');
-		canvas.className = 'blp-r-timeline-graph';
 		const marks = document.createElement('div');
 		marks.className = 'blp-r-timeline-marks';
-		host.appendChild(canvas);
 		host.appendChild(marks);
-		pb.tl = {host, canvas, marks};
-		if (window.ResizeObserver) new ResizeObserver(() => drawTimeline()).observe(host);
+		pb.tl = {host, marks};
 		return pb.tl;
 	}
 
@@ -280,7 +277,6 @@
 		if (!tl) return;
 		const s = cfg();
 		const show = R.active() && !R.overlaysHidden;
-		tl.canvas.style.display = show && s.timelineGraph ? '' : 'none';
 		tl.marks.style.display = show ? '' : 'none';
 		const dur = R.api.duration();
 		tl.marks.textContent = '';
@@ -309,45 +305,6 @@
 			region.style.width = Math.max(0.3, b - a) + '%';
 			tl.marks.appendChild(region);
 		}
-
-		if (!s.timelineGraph) return;
-		const notes = (R.replayInfo && R.replayInfo.notes) || [];
-		const points = notes.filter(n => n.isBlock && typeof n.accuracy === 'number' && n.accuracy > 0);
-		const dpr = window.devicePixelRatio || 1;
-		const w = tl.host.clientWidth;
-		const h = 34;
-		tl.canvas.width = Math.max(1, Math.round(w * dpr));
-		tl.canvas.height = Math.round(h * dpr);
-		tl.canvas.style.height = h + 'px';
-		tl.canvas.style.opacity = U.clamp((Number(s.timelineGraphOpacity) || 70) / 100, 0.05, 1);
-		const g = tl.canvas.getContext('2d');
-		g.setTransform(dpr, 0, 0, dpr, 0, 0);
-		g.clearRect(0, 0, w, h);
-		if (points.length < 2) return;
-		const settled = points.slice(Math.min(points.length - 1, Math.floor(points.length * 0.05)));
-		const minAcc = Math.max(0, Math.min(...settled.map(p => p.accuracy)) - 0.5);
-		const maxAcc = Math.min(100, Math.max(...settled.map(p => p.accuracy)) + 0.2);
-		const X = time => (time / dur) * w;
-		const Y = acc => h - 2 - ((U.clamp(acc, minAcc, maxAcc) - minAcc) / Math.max(0.1, maxAcc - minAcc)) * (h - 4);
-		const grad = g.createLinearGradient(0, 0, w, 0);
-		grad.addColorStop(0, '#ff3d9a');
-		grad.addColorStop(1, '#40c4ff');
-		g.beginPath();
-		g.moveTo(X(points[0].time), h);
-		for (const p of points) g.lineTo(X(p.time), Y(p.accuracy));
-		g.lineTo(X(points[points.length - 1].time), h);
-		g.closePath();
-		g.fillStyle = 'rgba(255, 61, 154, 0.18)';
-		g.fill();
-		g.beginPath();
-		points.forEach((p, i) => (i ? g.lineTo(X(p.time), Y(p.accuracy)) : g.moveTo(X(p.time), Y(p.accuracy))));
-		g.strokeStyle = grad;
-		g.lineWidth = 1.5;
-		g.stroke();
-		g.fillStyle = 'rgba(255,255,255,0.7)';
-		g.font = '9px system-ui, sans-serif';
-		g.fillText(maxAcc.toFixed(1) + '%', 2, 9);
-		g.fillText(minAcc.toFixed(1) + '%', 2, h - 8);
 	}
 
 	/* ------------------------------------------------------------------ Settings → BL+ sections */
@@ -383,7 +340,6 @@
 	function renderTimeline(body) {
 		const ui = R.ui;
 		const s = cfg();
-		body.appendChild(ui.toggle(t('f.playback.timelineGraph'), s.timelineGraph, v => R.setPath('playback.timelineGraph', v)));
 		body.appendChild(ui.toggle(t('f.playback.bookmarksOnTimeline'), s.bookmarksOnTimeline, v => R.setPath('playback.bookmarksOnTimeline', v)));
 		const list = ui.h('div', {class: 'blp-r-list'});
 		if (!pb.bookmarks.items.length) list.appendChild(ui.hint(t('r.noBookmarks')));
@@ -473,7 +429,7 @@
 		},
 		maintain() {
 			watchOfficialSpeed();
-			if (pb.tl && !pb.tl.canvas.isConnected) drawTimeline();
+			if (pb.tl && !pb.tl.marks.isConnected) drawTimeline();
 		},
 	});
 })();
