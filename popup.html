@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>BeatLeaderPlus</title>
+		<link rel="stylesheet" href="popup.css" />
+	</head>
+	<body>
+		<header class="head">
+			<img src="icons/icon48.png" alt="" class="logo" />
+			<div class="title">
+				<strong data-i18n="popup.title">BeatLeaderPlus</strong>
+				<span id="version" class="muted"></span>
+			</div>
+			<label class="switch" id="masterSwitch">
+				<input type="checkbox" id="masterToggle" />
+				<span class="slider"></span>
+			</label>
+		</header>
+
+		<p id="disabledHint" class="hint hidden" data-i18n="popup.disabledHint"></p>
+
+		<section id="replaySection" class="card hidden">
+			<h2 data-i18n="popup.replayActions"></h2>
+			<div id="replayBody"></div>
+		</section>
+
+		<section id="toggleSection" class="card">
+			<h2 data-i18n="popup.quickToggles"></h2>
+			<div id="toggles" class="toggles"></div>
+		</section>
+
+		<section id="followSection" class="card hidden">
+			<div class="card-head">
+				<h2 data-i18n="popup.follows"></h2>
+				<div class="card-actions">
+					<button id="checkNow" class="link" data-i18n="popup.checkNow"></button>
+					<button id="clearNew" class="link" data-i18n="popup.clearNew"></button>
+				</div>
+			</div>
+			<div id="followList" class="list"></div>
+		</section>
+
+		<section id="favSection" class="card hidden">
+			<div class="card-head">
+				<h2 data-i18n="popup.favorites"></h2>
+				<div class="tabs">
+					<button class="tab active" data-tab="players" data-i18n="popup.players"></button>
+					<button class="tab" data-tab="maps" data-i18n="popup.maps"></button>
+				</div>
+			</div>
+			<div id="favList" class="list"></div>
+		</section>
+
+		<footer class="foot">
+			<span id="status" class="muted"></span>
+			<button id="openOptions" class="btn primary" data-i18n="popup.openOptions"></button>
+		</footer>
+		<p class="disclaimer muted" data-i18n="app.disclaimer"></p>
+
+		<script src="lib/i18n.js"></script>
+		<script src="lib/defaults.js"></script>
+		<script src="lib/utils.js"></script>
+		<script src="lib/storage.js"></script>
+		<script src="lib/schema.js"></script>
+		<script src="popup.js"></script>
+	</body>
+</html>
