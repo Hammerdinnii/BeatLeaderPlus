@@ -116,7 +116,14 @@ function watch(page, label) {
 					return json(Object.assign({}, mock, {id: Number(id), accuracy: id === '1002' ? 0.932 : 0.985, player: {name: id === '1002' ? 'Bob' : 'Alice'}}));
 				}
 				if (/scorestats/.test(u)) return json({accuracyTracker: {accLeft: 113.1, accRight: 112.4}});
-				if (/api\.beatleader\.com\/player\/[^/?]+$/.test(u)) return json({id: '111', name: 'Alice Real', avatar: 'https://cdn.assets.beatleader.xyz/111.png'});
+				if (/api\.beatleader\.com\/player\/[^/?]+$/.test(u)) {
+					// Profiles by ID or alias, as the BeatLeader API resolves them.
+					const players = {111: {id: '111', name: 'Alice Real', alias: 'alice-cool'}, 222: {id: '222', name: 'Bob Real'}, 333: {id: '333', name: 'Carol Real'}, 444: {id: '444', name: 'Dave Real'}, 999: {id: '999', name: 'Me Real'}};
+					players['alice-cool'] = players[111];
+					const p = players[decodeURIComponent(u.split('/player/')[1])];
+					if (!p) return new Response('{}', {status: 404});
+					return json(Object.assign({avatar: 'https://cdn.assets.beatleader.xyz/' + p.id + '.png'}, p));
+				}
 				return realFetch(url, opts);
 			};
 		}, mockScore);
@@ -179,7 +186,8 @@ function watch(page, label) {
 
 	// Settings → BL+
 	await page.keyboard.press('Backquote');
-	await sleep(300);
+	// The replayer shows its controls on its next frames; software rendering can be ~1 fps.
+	await page.waitForFunction(() => document.body.classList.contains('showControls') && document.getElementById('blpSettingsPane').classList.contains('active'), null, {timeout: 8000}).catch(() => null);
 	const settingsState = () =>
 		page.evaluate(() => ({
 			open: document.getElementById('settingsContainer').classList.contains('settingsActive'),
@@ -648,7 +656,31 @@ function watch(page, label) {
 	await site.click('.player-score .blp-star');
 	await sleep(600);
 	const favs = await sw.evaluate(() => chrome.storage.local.get('blp_favorites'));
-	check('favorite saved', favs.blp_favorites && favs.blp_favorites.players['111'], favs.blp_favorites && Object.keys(favs.blp_favorites.players));
+	const alice = favs.blp_favorites && favs.blp_favorites.players['111'];
+	check('favorite saved under the player ID with the API name', alice && alice.name === 'Alice Real' && alice.alias === 'alice-cool', favs.blp_favorites && favs.blp_favorites.players);
+	// The same player through her profile alias shows as already favorited.
+	check('alias links show the same favorite', await site.evaluate(() => document.querySelector('.other-players a[href="/u/alice-cool"] + .blp-star').classList.contains('blp-star-on')));
+	// Links to a player's score pages (/u/<id>/scores/1?…) get a star too.
+	await site.click('.other-players a[href^="/u/333/"] + .blp-star');
+	await sleep(600);
+	// The site reuses link elements when lists change: the star must follow the link, not the
+	// player who was there when it was added.
+	await site.evaluate(() => {
+		const a = document.querySelector('.player-score:nth-child(2) a[href="/u/222"]');
+		a.setAttribute('href', '/u/444');
+		a.textContent = 'Dave';
+	});
+	await sleep(400);
+	await site.click('.player-score:nth-child(2) a[href="/u/444"] + .blp-star');
+	await sleep(600);
+	const favs2 = (await sw.evaluate(() => chrome.storage.local.get('blp_favorites'))).blp_favorites.players;
+	check('score-page player links can be favorited', favs2['333'] && favs2['333'].name === 'Carol Real', Object.keys(favs2));
+	check('a reused link favorites the player it shows now', favs2['444'] && favs2['444'].name === 'Dave Real' && !favs2['222'], Object.keys(favs2));
+	await site.evaluate(() => {
+		const a = document.querySelector('.player-score:nth-child(2) a[href="/u/444"]');
+		a.setAttribute('href', '/u/222');
+		a.textContent = 'Bob';
+	});
 	await site.click('#blp-dock >> text=Full combo');
 	await sleep(300);
 	const hidden = await site.evaluate(() => document.querySelectorAll('.player-score.blp-filtered-out').length);

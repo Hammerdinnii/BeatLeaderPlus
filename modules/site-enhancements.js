@@ -132,9 +132,55 @@
 		await storage.setLocal(D.KEYS.favorites, state.favorites);
 	}
 
+	/**
+	 * Profile links use a player's ID or their custom alias (/u/<id> or /u/<alias>), so a
+	 * favorite player is found by either; favorites are stored under the real ID.
+	 */
+	function favoritePlayer(key) {
+		const players = state.favorites.players;
+		const k = String(key);
+		if (players[k]) return players[k];
+		const lower = k.toLowerCase();
+		return Object.values(players).find(p => p.alias && String(p.alias).toLowerCase() === lower) || null;
+	}
+
 	function isFavorite(kind, id) {
-		const bucket = kind === 'player' ? state.favorites.players : state.favorites.maps;
-		return !!bucket[String(id)];
+		if (kind === 'player') return !!favoritePlayer(id);
+		return !!state.favorites.maps[String(id)];
+	}
+
+	/** Favorite or unfavorite a player given the ID or alias from a profile link. */
+	async function togglePlayerFavorite(key, fallbackName, button) {
+		if (!key) return;
+		await loadFavorites();
+		const players = state.favorites.players;
+		const existing = favoritePlayer(key);
+		if (existing) {
+			delete players[existing.id || key];
+			delete players[key];
+			toast(t('site.favRemoved'));
+		} else {
+			if (button) button.classList.add('blp-busy');
+			let info;
+			try {
+				info = await BLP.send('resolvePlayer', {player: key});
+			} catch (e) {
+				// Without the API, only a numeric player ID can be trusted as is.
+				if (!/^\d+$/.test(key)) {
+					toast(t('site.playerLookupFailed'), 'error');
+					return;
+				}
+				info = {id: key, name: fallbackName || key, avatar: '', alias: ''};
+			} finally {
+				if (button) button.classList.remove('blp-busy');
+			}
+			const name = info.name || fallbackName || info.id;
+			players[info.id] = {id: info.id, name, avatar: info.avatar || '', alias: info.alias || '', note: (players[info.id] && players[info.id].note) || '', added: Date.now()};
+			toast(t('site.favPlayerAdded', {name}), 'success');
+		}
+		await saveFavorites();
+		refreshStars();
+		renderDock();
 	}
 
 	async function toggleFavorite(kind, id, name, extra = {}) {
@@ -155,8 +201,7 @@
 
 	async function editFavoriteNote(kind, id) {
 		await loadFavorites();
-		const bucket = kind === 'player' ? state.favorites.players : state.favorites.maps;
-		const fav = bucket[String(id)];
+		const fav = kind === 'player' ? favoritePlayer(id) : state.favorites.maps[String(id)];
 		if (!fav) return;
 		const note = window.prompt(t('site.favNotePrompt', {name: fav.name}), fav.note || '');
 		if (note === null) return;
@@ -211,16 +256,19 @@
 			// like the site's own, instead of as one group squeezed into a single cell.
 			const grid = a.parentElement && a.parentElement.parentElement && a.parentElement.parentElement.classList.contains('buttons-container') ? a.closest('.buttons-container') : null;
 			const buttons = [];
+			// The site reuses link elements for other scores, so read the link when clicked.
+			const current = () => U.parseReplayUrl(a.href) || parsed;
 			// The site has its own .bsor download icon, if the user turned it on.
 			const siteDownload = grid && Array.from(grid.querySelectorAll('a[href]')).some(x => /\.bsor(\?|$)/i.test(x.getAttribute('href')) && !/replay\.beatleader\./.test(x.href));
 			if (s.downloadButton && !siteDownload) {
-				const b = iconButton('⬇', t('site.download'), () => downloadReplay(parsed, b), 'blp-dl');
+				const b = iconButton('⬇', t('site.download'), () => downloadReplay(current(), b), 'blp-dl');
 				buttons.push(b);
 			}
-			if (s.enhancedReplayButton) buttons.push(iconButton('✦', t('site.enhanced'), e => openEnhanced(parsed, e), 'blp-enh'));
+			if (s.enhancedReplayButton) buttons.push(iconButton('✦', t('site.enhanced'), e => openEnhanced(current(), e), 'blp-enh'));
 			if (s.compare && parsed.scoreId) {
-				const b = iconButton('⚖', t('site.compare'), () => toggleCompare(parsed.scoreId), 'blp-cmp');
+				const b = iconButton('⚖', t('site.compare'), () => toggleCompare(current().scoreId), 'blp-cmp');
 				b.dataset.scoreId = parsed.scoreId;
+				b.__blpScore = current;
 				buttons.push(b);
 			}
 			let badges = null;
@@ -244,15 +292,39 @@
 
 	/* ------------------------------------------------------------------ favorites (stars) */
 
-	function starButton(kind, id, name, extra) {
-		const b = iconButton('☆', t('site.favorite'), () => toggleFavorite(kind, id, name, extra), 'blp-star');
+	const playerKey = href => {
+		const m = /^\/u\/([^/?#]+)/.exec(new URL(href, location.href).pathname);
+		return m ? decodeURIComponent(m[1]) : null;
+	};
+	const mapKey = href => {
+		const m = /^\/leaderboard\/[^/]+\/([^/?#]+)/.exec(new URL(href, location.href).pathname);
+		return m ? decodeURIComponent(m[1]) : null;
+	};
+	const linkText = a => (a.textContent || '').trim().replace(/\s+/g, ' ');
+
+	/**
+	 * A star next to a player or map link. It reads the link when clicked rather than when it is
+	 * added: the site reuses link elements for other players and maps when the list changes.
+	 */
+	function starButton(kind, link) {
+		const key = () => (kind === 'player' ? playerKey(link.href) : mapKey(link.href));
+		const b = iconButton(
+			'☆',
+			t('site.favorite'),
+			() => {
+				if (kind === 'player') return togglePlayerFavorite(key(), linkText(link), b);
+				return toggleFavorite('map', key(), linkText(link), {url: new URL(link.href, location.href).pathname});
+			},
+			'blp-star'
+		);
 		b.dataset.kind = kind;
-		b.dataset.favId = String(id);
+		b.__blpKey = key;
 		updateStar(b);
 		return b;
 	}
 
 	function updateStar(b) {
+		if (b.__blpKey) b.dataset.favId = b.__blpKey() || '';
 		const on = isFavorite(b.dataset.kind, b.dataset.favId);
 		b.textContent = on ? '★' : '☆';
 		b.classList.toggle('blp-star-on', on);
@@ -264,27 +336,25 @@
 	}
 
 	function processFavoriteLinks() {
+		// Profile links: /u/<id or alias>, also with a page or tab after it (/u/<id>/scores/1).
+		// Links with no text (avatars) or a lot of it (whole cards) get no star.
 		document.querySelectorAll('a[href*="/u/"]').forEach(a => {
 			if (a.dataset.blpFav) return;
 			a.dataset.blpFav = '1';
 			if (isInChrome(a) || !U.SITE_HOST_RE.test(a.hostname)) return;
-			const m = a.pathname.match(/^\/u\/([^/?#]+)\/?$/);
-			const name = (a.textContent || '').trim();
-			if (!m || !name || name.length > 64) return;
-			const id = decodeURIComponent(m[1]);
-			const avatar = (a.closest(ROW_SELECTOR) || a.parentElement || a).querySelector('img');
-			a.insertAdjacentElement('afterend', starButton('player', id, name, {avatar: avatar ? avatar.src : ''}));
+			const text = linkText(a);
+			if (!playerKey(a.href) || !text || text.length > 64) return;
+			a.insertAdjacentElement('afterend', starButton('player', a));
 		});
 		document.querySelectorAll('a[href*="/leaderboard/"]').forEach(a => {
 			if (a.dataset.blpFav) return;
 			a.dataset.blpFav = '1';
 			if (isInChrome(a) || !U.SITE_HOST_RE.test(a.hostname)) return;
-			const m = a.pathname.match(/^\/leaderboard\/[^/]+\/([^/?#]+)/);
-			const name = (a.textContent || '').trim().replace(/\s+/g, ' ');
-			if (!m || !name || name.length > 120) return;
-			const id = decodeURIComponent(m[1]);
-			a.insertAdjacentElement('afterend', starButton('map', id, name, {url: a.pathname}));
+			const text = linkText(a);
+			if (!mapKey(a.href) || !text || text.length > 120) return;
+			a.insertAdjacentElement('afterend', starButton('map', a));
 		});
+		refreshStars();
 	}
 
 	/* ------------------------------------------------------------------ auto expand */
@@ -340,12 +410,12 @@
 			}
 			case 'favorites': {
 				const players = Array.from(row.querySelectorAll('a[href*="/u/"]')).some(a => {
-					const m = a.pathname.match(/^\/u\/([^/?#]+)/);
-					return m && isFavorite('player', decodeURIComponent(m[1]));
+					const key = playerKey(a.href);
+					return key && isFavorite('player', key);
 				});
 				const maps = Array.from(row.querySelectorAll('a[href*="/leaderboard/"]')).some(a => {
-					const m = a.pathname.match(/^\/leaderboard\/[^/]+\/([^/?#]+)/);
-					return m && isFavorite('map', decodeURIComponent(m[1]));
+					const key = mapKey(a.href);
+					return key && isFavorite('map', key);
 				});
 				return players || maps || (info.type === 'leaderboard' && isFavorite('map', info.leaderboardId));
 			}
@@ -433,7 +503,10 @@
 	}
 
 	function refreshCompareButtons() {
-		document.querySelectorAll('.blp-cmp').forEach(b => b.classList.toggle('blp-active', state.compare.includes(b.dataset.scoreId)));
+		document.querySelectorAll('.blp-cmp').forEach(b => {
+			if (b.__blpScore) b.dataset.scoreId = b.__blpScore().scoreId || '';
+			b.classList.toggle('blp-active', state.compare.includes(b.dataset.scoreId));
+		});
 	}
 
 	async function fetchStats(scoreId) {
@@ -597,12 +670,13 @@
 			const id = info.playerId;
 			const name = profileNameGuess() || id;
 			if (s.favorites) {
-				const fav = isFavorite('player', id);
-				items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: () => toggleFavorite('player', id, name)}, (fav ? '★ ' : '☆ ') + t(fav ? 'site.unfavorite' : 'site.favorite')));
-				if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', title: state.favorites.players[id].note || '', onclick: () => editFavoriteNote('player', id)}, '✎ ' + (state.favorites.players[id].note ? state.favorites.players[id].note.slice(0, 24) : t('common.notes'))));
+				const fav = favoritePlayer(id);
+				items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: e => togglePlayerFavorite(id, name, e.currentTarget)}, (fav ? '★ ' : '☆ ') + t(fav ? 'site.unfavorite' : 'site.favorite')));
+				if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', title: fav.note || '', onclick: () => editFavoriteNote('player', id)}, '✎ ' + (fav.note ? fav.note.slice(0, 24) : t('common.notes'))));
 			}
 			if (s.follow.enabled) {
-				const following = !!state.followed[id];
+				const lower = String(id).toLowerCase();
+				const following = !!state.followed[id] || Object.values(state.followed).some(p => p.alias && String(p.alias).toLowerCase() === lower);
 				items.push(
 					h(
 						'button',
@@ -773,7 +847,8 @@
 					return;
 				}
 			});
-			state.observer.observe(document.body, {childList: true, subtree: true});
+			// href changes too: the site reuses link elements for other players and scores.
+			state.observer.observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['href']});
 			window.addEventListener('popstate', scheduleScan);
 			// SPA route changes don't always produce DOM mutations quickly; poll the URL as a fallback.
 			setInterval(() => location.href !== state.lastUrl && scheduleScan(), 700);
