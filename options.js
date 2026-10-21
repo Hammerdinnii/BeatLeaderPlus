@@ -21,9 +21,9 @@
 	const DOMAINS = ['beatleader.com', 'replay.beatleader.com', 'beatleader.xyz', 'replay.beatleader.xyz', 'beatleader.net', 'replay.beatleader.net'];
 	const GLOBAL_ONLY_SECTIONS = ['general', 'library', 'popup', 'data'];
 	const AUDIO_EXT = /\.(mp3|ogg|oga|wav|m4a|aac|flac|webm)$/i;
-	const MODEL_EXT = /\.(glb|gltf|obj)$/i;
+	const MODEL_EXT = /\.(glb|gltf|obj|saber)$/i;
 	const MAX_SOUND_BYTES = 2 * 1024 * 1024;
-	const MAX_MODEL_BYTES = 12 * 1024 * 1024;
+	const MAX_MODEL_BYTES = 32 * 1024 * 1024;
 	const BUILTIN_SOUNDS = ['builtin:click', 'builtin:tick', 'builtin:chime', 'builtin:buzz', 'builtin:thud', 'builtin:boom'];
 
 	/** Shortcuts used by the official replayer (shown as a hint when a BLP binding replaces one). */
@@ -1021,7 +1021,7 @@
 							class: 'btn',
 							type: 'button',
 							onclick: async () => {
-								const files = await pickFiles({accept: '.glb,.gltf,.obj', multiple: true});
+								const files = await pickFiles({accept: '.saber,.glb,.gltf,.obj', multiple: true});
 								for (const f of files) {
 									if (!MODEL_EXT.test(f.name)) continue;
 									if (f.size > MAX_MODEL_BYTES) {

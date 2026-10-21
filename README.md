@@ -70,7 +70,9 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 - **Note colors** independent of the saber colors, plus **chain** and **arc** overrides.
 - **Trails**: color (follow the saber or custom), width (how much of the blade the trail covers) and brightness, layered on the official trail.
 - **Glow intensity** and **saber styles**: neon, particle, or a **custom saber model**. Saber colors always come from the replayer's own color pickers.
-- **Custom saber models**: choose "Custom model" in Settings → BL+ and drop a `.glb`, self-contained `.gltf` or `.obj` file on the drop zone (or click it to pick one), for both sabers or one hand. The model is saved, shown spinning in the drop zone and put on the sabers right away. It is fitted to the blade automatically (longest side along the blade, grip at the hilt) and drawn with flat shading like the replayer's sabers. Scale, rotation, saber-color tint and hiding the default blade are adjustable, and saved models can be reused or managed on the options page. Beat Saber `.saber` files are Unity asset bundles that a browser can't read; export them to `.glb` first (for example with AssetRipper).
+- **Custom saber models**: choose "Custom model" in Settings → BL+ and drop a Beat Saber **`.saber`** file, or a `.glb`, self-contained `.gltf` or `.obj` model, on the drop zone (or click it to pick one), for both sabers or one hand. The model is saved, shown spinning in the drop zone and put on the sabers right away. Scale, rotation, saber-color tint and hiding the default blade are adjustable, and saved models can be reused or managed on the options page.
+  - **`.saber` files** are read directly: their left and right sabers, meshes, materials, textures, name and author. They are placed exactly as in the game, and materials marked for custom colors (`_CustomColors`, or glowing ones without that flag) take the replay's saber colors. Shaders can't run outside Unity, so materials are drawn with their base color and main texture (flat shading by default); trails, particles and other scripted effects aren't shown. Files are read in a background worker so the replay keeps playing.
+  - **3D models** are fitted to the blade automatically (longest side along the blade, grip at the hilt).
 - **Mistake effects**: screen flashes for misses, bad cuts and bombs, 3D markers (ring, cross or pillar) and hit particles (saber color, custom, or colored by accuracy).
 - **Show or hide** each saber, the trails, notes, bombs, walls, arcs and chains. This uses three.js layers, so the replayer's object pools are left alone.
 - **Accuracy heat** (`Alt+Shift+A`): tints each note with the cut score it receives in this replay (115 / 110+ / 105+ / 100+ / lower / mistake).
@@ -205,6 +207,8 @@ lib/
   storage.js             sync/local persistence, migration, per-domain overrides, import/export
   schema.js              declarative settings schema used by options and popup
   zip.js                 dependency-free zip reader for hitsound packs
+  unity-saber.js         .saber reader: Unity asset bundles (LZ4/LZMA), serialized files and
+                         type trees, meshes, materials, textures; runs in a worker in the page
 popup.* / options.*      extension UI
 styles/theme.css         styles for UI added to the website
 styles/replay-ui.css     styles for the additions to the replayer's menus and timeline
@@ -250,7 +254,7 @@ There is no build step: edit the files and reload the extension.
 - **New setting:** add the default in `lib/defaults.js`, a field in `lib/schema.js` and its label (`f.<path>`) in `lib/i18n.js`. Then read it where the feature lives. The options page and popup pick it up automatically.
 - **New replay feature:** create `injected/my-feature.js` that calls `BLPR.register({name, init(ctx), onSettings(s), onReplay(info), tick(frame), maintain()})`. Put its controls in the replayer's menus with `BLPR.ui.addSettingsSection`, `BLPR.ui.addCameraSection` or `BLPR.ui.addMenuItem`. Add the file to the `FILES` list in `modules/replay-bridge.js` (before `injected-replay.js`). The modules shipped with BeatLeaderPlus are good examples.
 - **New language:** add a table to `STRINGS` in `lib/i18n.js` (missing keys fall back to English) and an option in the language select in `lib/schema.js`.
-- **Tests:** `tests/e2e/run-tests.js` drives the extension in Chromium against the real BeatLeader web replayer (built unmodified from its repository) and a small leaderboard page. See [tests/README.md](tests/README.md).
+- **Tests:** `node --test tests/unit/*.test.js` checks the `.saber` reader against reference data from UnityPy. `tests/e2e/run-tests.js` drives the extension in Chromium against the real BeatLeader web replayer (built unmodified from its repository) and a small leaderboard page. See [tests/README.md](tests/README.md).
 - Use tabs, single quotes and short comments that explain *why*, and avoid external dependencies.
 
 ### Known limitations
