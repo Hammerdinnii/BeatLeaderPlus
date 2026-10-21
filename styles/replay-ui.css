@@ -154,6 +154,14 @@
 	background-color: var(--blpr-accent);
 }
 
+.blp-r-btn .blp-r-icon {
+	font-size: 10px;
+}
+
+.blp-r-btn .blp-r-icon-text {
+	margin-right: 5px;
+}
+
 .blp-r-input {
 	width: 100% !important;
 	max-width: 220px;

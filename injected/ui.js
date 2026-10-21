@@ -98,6 +98,7 @@
 		return h('div', {class: 'toggleButton blp-r-select', title: title || ''}, h('label', null, text ? h('div', {class: 'toggleButtonContainer'}, label(text + ':')) : null, sel));
 	};
 
+	/** opts.icon: Font Awesome classes (the replayer loads FA 6) shown before the text. */
 	ui.button = function (text, onClick, opts = {}) {
 		return h(
 			'button',
@@ -105,13 +106,15 @@
 				type: 'button',
 				class: 'settingButton blp-r-btn' + (opts.active ? ' blp-r-active' : '') + (opts.className ? ' ' + opts.className : ''),
 				title: opts.title || '',
+				'aria-label': !text && opts.title ? opts.title : null,
 				disabled: !!opts.disabled,
 				onclick: e => {
 					e.preventDefault();
 					onClick(e);
 				},
 			},
-			text
+			opts.icon ? h('i', {class: opts.icon + (text ? ' blp-r-icon blp-r-icon-text' : ' blp-r-icon'), 'aria-hidden': 'true'}) : null,
+			text || null
 		);
 	};
 

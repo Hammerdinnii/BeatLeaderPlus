@@ -685,6 +685,5 @@
 		R.request('status', {ready: true}).catch(() => {});
 		R.emit('ready', R.ctx);
 		for (const m of R.modules) safeCall(m, 'onReady', R.ctx);
-		if (R.settings && R.settings.general.enabled) api.notify(R.t('r.ready'), 'fas fa-plus');
 	};
 })();
