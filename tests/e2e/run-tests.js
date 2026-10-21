@@ -381,6 +381,8 @@ function watch(page, label) {
 	// Visuals (saber colours stay with the replayer's own colour pickers)
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {trailOverride: true, trailWidth: 50}, notes: {override: true, left: '#ffff00', right: '#00ffff'}}}));
 	await sleep(600);
+	// The trail is patched on the next frame; headless rendering can take a while to draw one.
+	await page.waitForFunction(() => BLPR.ctx.leftSaber.components.trail.material.vertexShader.includes('blpWidth'), null, {timeout: 5000}).catch(() => null);
 	const vis = await page.evaluate(() => ({
 		bg: Object.assign({}, BLPR.ctx.beatGenerator().colors),
 		trailVS: BLPR.ctx.leftSaber.components.trail.material.vertexShader.includes('blpWidth'),
@@ -637,21 +639,23 @@ function watch(page, label) {
 	check('A-B loop (T) jumps back', loopNow < loopT + 1.2, [loopT, loopNow]);
 	await page.keyboard.press('Shift+KeyT');
 
-	// Low-accuracy cuts join the replayer's own "change speed around mistakes"
+	// "Also slow down on low-accuracy cuts" and the replayer's own "Change speed around mistakes"
+	// are one switch: either one turns both on or off.
 	const windows = () => page.evaluate(() => BLPR.ctx.songControls().missWindows.length);
-	const officialSlow = () => page.evaluate(() => ({setting: BLPR.official.get('autoSpeedControls'), box: document.getElementById('autoSpeedControls').checked}));
-	const slowBefore = await officialSlow();
+	const slowState = () =>
+		page.evaluate(() => ({ours: BLPR.settings.playback.slowOnLowAcc, official: BLPR.official.get('autoSpeedControls'), box: document.getElementById('autoSpeedControls').checked}));
+	const slowBefore = await slowState();
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true, lowAccThreshold: 100}}));
 	await sleep(600);
-	const slowLinked = await officialSlow();
-	check("low-acc slow-mo turns on the replayer's own \"Change speed around mistakes\"", !slowBefore.setting && slowLinked.setting === true && slowLinked.box, [slowBefore, slowLinked]);
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
-	await sleep(400);
-	const officialWindows = await windows();
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true}}));
-	await sleep(500);
+	const slowOn = await slowState();
+	check("turning low-acc slow-mo on turns on the replayer's \"Change speed around mistakes\"", !slowBefore.ours && !slowBefore.official && slowOn.official === true && slowOn.box, [slowBefore, slowOn]);
 	const withLowAcc = await windows();
-	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows, [officialWindows, withLowAcc]);
+	await page.evaluate(() => BLPR.patchSettings({playback: {lowAccThreshold: 1}})); // no cut scores below 1
+	await sleep(500);
+	const officialWindows = await windows();
+	await page.evaluate(() => BLPR.patchSettings({playback: {lowAccThreshold: 100}}));
+	await sleep(500);
+	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows && (await windows()) === withLowAcc, [officialWindows, withLowAcc]);
 	await officialToggle('slowOnMiss', true); // any change makes the replayer recompute its windows
 	check('windows survive the replayer recomputing them', (await windows()) === withLowAcc);
 	// Paused inside the window, so slow software rendering can't run the song past it.
@@ -662,13 +666,29 @@ function watch(page, label) {
 	check('official slow-mo engages around a miss', slow < 0.9, slow);
 	await page.evaluate(() => BLPR.api.play());
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
-	await sleep(300);
-	check('turning it off restores the official windows', (await windows()) === officialWindows);
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true}}));
-	await sleep(400);
+	await sleep(500);
+	const slowOff = await slowState();
+	check("turning low-acc slow-mo off turns the replayer's own off", slowOff.ours === false && slowOff.official === false && !slowOff.box, slowOff);
+	await officialToggle('autoSpeedControls', true);
+	await sleep(500);
+	const officialOn = await slowState();
+	check("turning the replayer's own on turns low-acc slow-mo on", officialOn.ours === true && officialOn.official === true, officialOn);
 	await officialToggle('autoSpeedControls', false);
-	await sleep(800);
-	check("turning the replayer's own off turns low-acc slow-mo off too", await page.evaluate(() => BLPR.settings.playback.slowOnLowAcc === false && !BLPR.official.get('autoSpeedControls')));
+	await sleep(500);
+	const officialOff = await slowState();
+	check("turning the replayer's own off turns low-acc slow-mo off", officialOff.ours === false && officialOff.official === false, officialOff);
+	const clickLowAcc = () =>
+		page.evaluate(() => {
+			const row = Array.from(document.querySelectorAll('#blp-sec-playback .blp-r-toggle')).find(r => /low-accuracy/.test(r.textContent));
+			row.querySelector('input').click();
+		});
+	await clickLowAcc();
+	await sleep(500);
+	const tabOn = await slowState();
+	await clickLowAcc();
+	await sleep(500);
+	const tabOff = await slowState();
+	check('the switch in Settings → BL+ turns both on and off', tabOn.ours && tabOn.official && tabOn.box && !tabOff.ours && !tabOff.official && !tabOff.box, [tabOn, tabOff]);
 
 	// Pause at mistakes
 	await page.evaluate(() => BLPR.patchSettings({playback: {pauseOnMistakes: true}}));
