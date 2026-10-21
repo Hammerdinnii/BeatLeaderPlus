@@ -4,7 +4,7 @@ A Manifest V3 Chrome extension that adds a customizable enhancement layer to [Be
 
 In the replay viewer, BeatLeaderPlus **extends the replayer's own interface** instead of adding a second one. There is no floating panel or extra HUD. New options appear as a **BL+ tab** in the replayer's Settings menu, as an extra block and a **BL+ tab** in its Camera menu, and as extra entries in its right-click menu. Features build on what the replayer already does (its free camera, saber colors, "slow down on mistakes", hitsound volume and score HUD) rather than duplicating it.
 
-The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes, speed buttons and an FPS limit; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, follows, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
+The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes, speed buttons and an FPS limit; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
 
 > BeatLeaderPlus is an unofficial, fan-made extension. It is not affiliated with or endorsed by BeatLeader. The popup and the options page say so too.
 
@@ -118,11 +118,11 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 ### Website enhancements
 
 - **Download .bsor** and **compare** buttons next to every replay link. In BeatLeader's score icon grid they appear as extra icons in the same style, and the download icon is left out when the site already shows its own. Replay links also get a "Download replay (.bsor)" right-click entry. (There is no separate "enhanced replayer": every replay link opens the official replayer, which BeatLeaderPlus extends.)
-- **Followed players**: background polling for new scores, a toolbar badge counter and optional desktop notifications. Players are looked up on BeatLeader and saved under their player ID, so profile aliases (`/u/<alias>`) follow the right person. (For favorite players and maps, use BeatLeader's own follow button and "Add to playlist".)
 - **Score comparison**: pick two scores (scales icon) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.
 - **Auto-expand score details**.
+- Following players and favoriting maps are left to BeatLeader itself: its own follow button (with a Followed filter and a feed of their scores) and "Add to playlist".
 - **Quick filters**: my scores, clan, high accuracy (threshold is configurable) and full combo.
-- The **BL+ dock** on profile and leaderboard pages holds follow, statistics, filter and comparison controls. It stays collapsed to a **BL+** button until you click it; a dot on the button means a filter or comparison is active. **Drag the button** to any edge of the window: along the left and right edges the dock runs vertically, along the top and bottom horizontally, and the button stays where you put it when the dock opens. Double-click it to put it back at the bottom. Its size is a setting (Website enhancements → BL+ dock), and its position is remembered per browser.
+- The **BL+ dock** on profile and leaderboard pages holds statistics, filter and comparison controls. It stays collapsed to a **BL+** button until you click it; a dot on the button means a filter or comparison is active. **Drag the button** to any edge of the window: along the left and right edges the dock runs vertically, along the top and bottom horizontally, and the button stays where you put it when the dock opens. Double-click it to put it back at the bottom. Its size is a setting (Website enhancements → BL+ dock), and its position is remembered per browser.
 - **Profile statistics drawer**: average and median accuracy, FC rate, average stars, an accuracy distribution, personal bests over time and a recent accuracy trend.
 - Optional **extra badges** on scores (misses, bad cuts, pauses, max combo), fetched lazily and cached.
 
@@ -186,8 +186,7 @@ Shared links also set the replayer's own `time`, `speed`, `jd`, `cpx/cpy/cpz/crx
 ```
 manifest.json            MV3 manifest (content scripts, web-accessible resources, permissions)
 background.js            service worker: migration, messaging, API fetches, downloads,
-                         follow polling (alarms), badge, notifications, context menu,
-                         MAIN-world injection fallback
+                         context menu, MAIN-world injection fallback
 content-early.js         document_start: loads settings, applies the site theme before first paint
 content.js               document_idle: detects the page type and starts the right modules
 modules/
@@ -252,7 +251,6 @@ The page runtime has no `chrome.*` access, so it uses `window.postMessage` to ta
 | `blp_bookmarks` | local | bookmarks per replay |
 | `blp_camera_paths` | local | recorded camera paths |
 | `blp_hitsound_pack`, `blp_saber_models` | local | imported audio and models (base64) |
-| `blp_follow_state` | local | followed players, unseen new scores |
 | `blp_site_ui` | local | where the BL+ dock was dragged to on the website |
 
 ---
@@ -279,5 +277,5 @@ There is no build step: edit the files and reload the extension.
 
 ### Privacy
 
-BeatLeaderPlus only talks to the BeatLeader API, through the background worker and only for the features you use (score details, follows, statistics). All data stays in your browser's extension storage and is never sent anywhere else.
+BeatLeaderPlus only talks to the BeatLeader API, through the background worker and only for the features you use (score details and statistics). All data stays in your browser's extension storage and is never sent anywhere else.
 
