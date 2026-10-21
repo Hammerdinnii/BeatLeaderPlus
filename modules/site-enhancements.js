@@ -52,6 +52,7 @@
 		followed: {},
 		compare: [],
 		filter: 'all',
+		dockOpen: false,
 		lastUrl: location.href,
 		scoreCache: new Map(),
 		badgeObserver: null,
@@ -82,6 +83,7 @@
 		setTimeout(() => el.remove(), 3300);
 	}
 
+	/** icon: Font Awesome classes (the site loads Font Awesome) or plain text such as a star. */
 	function iconButton(icon, title, onClick, extraClass = '') {
 		return h(
 			'button',
@@ -98,7 +100,7 @@
 				},
 				onmousedown: e => e.stopPropagation(),
 			},
-			icon
+			/^fa[srb]? /.test(icon) ? h('i', {class: icon, 'aria-hidden': 'true'}) : icon
 		);
 	}
 
@@ -261,12 +263,12 @@
 			// The site has its own .bsor download icon, if the user turned it on.
 			const siteDownload = grid && Array.from(grid.querySelectorAll('a[href]')).some(x => /\.bsor(\?|$)/i.test(x.getAttribute('href')) && !/replay\.beatleader\./.test(x.href));
 			if (s.downloadButton && !siteDownload) {
-				const b = iconButton('⬇', t('site.download'), () => downloadReplay(current(), b), 'blp-dl');
+				const b = iconButton('fas fa-download', t('site.download'), () => downloadReplay(current(), b), 'blp-dl');
 				buttons.push(b);
 			}
-			if (s.enhancedReplayButton) buttons.push(iconButton('✦', t('site.enhanced'), e => openEnhanced(current(), e), 'blp-enh'));
+			if (s.enhancedReplayButton) buttons.push(iconButton('fas fa-magic', t('site.enhanced'), e => openEnhanced(current(), e), 'blp-enh'));
 			if (s.compare && parsed.scoreId) {
-				const b = iconButton('⚖', t('site.compare'), () => toggleCompare(current().scoreId), 'blp-cmp');
+				const b = iconButton('fas fa-balance-scale', t('site.compare'), () => toggleCompare(current().scoreId), 'blp-cmp');
 				b.dataset.scoreId = parsed.scoreId;
 				b.__blpScore = current;
 				buttons.push(b);
@@ -573,7 +575,7 @@
 			[t('site.statWalls'), s => s.wallsHit, v => num(v), 'low'],
 			[t('site.statPauses'), s => s.pauses, v => num(v), 'low'],
 			[t('site.statMaxCombo'), s => s.maxCombo, v => num(v), 'high'],
-			[t('site.statFc'), s => s.fullCombo, v => (v ? '✔' : '✘'), null],
+			[t('site.statFc'), s => s.fullCombo, v => t(v ? 'common.yes' : 'common.no'), null],
 			[t('site.statAccLeft'), (s, st) => hand(s, st, 'Left'), v => num(v, 2), 'high'],
 			[t('site.statAccRight'), (s, st) => hand(s, st, 'Right'), v => num(v, 2), 'high'],
 			[t('site.statModifiers'), s => s.modifiers || '', v => v || '—', null],
@@ -616,7 +618,7 @@
 			{class: 'blp-row-actions'},
 			scores.map(s =>
 				s && s.id
-					? h('a', {class: 'blp-btn', href: U.buildEnhancedReplayUrl({scoreId: s.id}, settings()), target: '_blank', rel: 'noopener'}, '✦ ' + ((s.player && s.player.name) || s.id))
+					? h('a', {class: 'blp-btn', href: U.buildEnhancedReplayUrl({scoreId: s.id}, settings()), target: '_blank', rel: 'noopener'}, h('i', {class: 'fas fa-magic', 'aria-hidden': 'true'}), ' ' + ((s.player && s.player.name) || s.id))
 					: null
 			),
 			h(
@@ -671,8 +673,8 @@
 			const name = profileNameGuess() || id;
 			if (s.favorites) {
 				const fav = favoritePlayer(id);
-				items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: e => togglePlayerFavorite(id, name, e.currentTarget)}, (fav ? '★ ' : '☆ ') + t(fav ? 'site.unfavorite' : 'site.favorite')));
-				if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', title: fav.note || '', onclick: () => editFavoriteNote('player', id)}, '✎ ' + (fav.note ? fav.note.slice(0, 24) : t('common.notes'))));
+				items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: e => togglePlayerFavorite(id, name, e.currentTarget)}, t(fav ? 'site.unfavorite' : 'site.favorite')));
+				if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', title: fav.note || '', onclick: () => editFavoriteNote('player', id)}, fav.note ? fav.note.slice(0, 24) : t('common.notes')));
 			}
 			if (s.follow.enabled) {
 				const lower = String(id).toLowerCase();
@@ -699,12 +701,12 @@
 								}
 							},
 						},
-						(following ? '🔕 ' : '🔔 ') + t(following ? 'site.unfollow' : 'site.follow')
+						t(following ? 'site.unfollow' : 'site.follow')
 					)
 				);
 			}
 			if (s.profileStats && BLP.profileStats) {
-				items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => BLP.profileStats.open(id, name)}, '📊 ' + t('site.profileStats')));
+				items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => BLP.profileStats.open(id, name)}, t('site.profileStats')));
 			}
 		}
 
@@ -712,8 +714,8 @@
 			const id = info.leaderboardId;
 			const name = (document.title || '').split('|')[0].trim() || id;
 			const fav = isFavorite('map', id);
-			items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: () => toggleFavorite('map', id, name, {url: location.pathname})}, (fav ? '★ ' : '☆ ') + t(fav ? 'site.unfavorite' : 'site.favorite')));
-			if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => editFavoriteNote('map', id)}, '✎ ' + (state.favorites.maps[id].note ? state.favorites.maps[id].note.slice(0, 24) : t('common.notes'))));
+			items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: () => toggleFavorite('map', id, name, {url: location.pathname})}, t(fav ? 'site.unfavorite' : 'site.favorite')));
+			if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => editFavoriteNote('map', id)}, state.favorites.maps[id].note ? state.favorites.maps[id].note.slice(0, 24) : t('common.notes')));
 		}
 
 		if (s.quickFilters && rows().length) {
@@ -738,7 +740,7 @@
 					'span',
 					{class: 'blp-dock-group'},
 					h('span', {class: 'blp-dock-label'}, t('site.compareSelected', {n: state.compare.length})),
-					state.compare.length === 2 ? h('button', {class: 'blp-chip blp-active', type: 'button', onclick: () => showComparison(state.compare.slice())}, '⚖ ' + t('site.compare')) : null,
+					state.compare.length === 2 ? h('button', {class: 'blp-chip blp-active', type: 'button', onclick: () => showComparison(state.compare.slice())}, t('site.compare')) : null,
 					h(
 						'button',
 						{
@@ -760,8 +762,27 @@
 			dock.remove();
 			return;
 		}
-		dock.appendChild(h('span', {class: 'blp-dock-brand', title: 'BeatLeaderPlus'}, 'BL+'));
-		items.forEach(i => dock.appendChild(i));
+		// Collapsed to the BL+ button until clicked. A dot marks an active filter or comparison.
+		const busy = state.filter !== 'all' || state.compare.length > 0;
+		dock.classList.toggle('blp-dock-open', state.dockOpen);
+		dock.appendChild(
+			h(
+				'button',
+				{
+					class: 'blp-dock-brand',
+					type: 'button',
+					title: t('site.dockToggle'),
+					'aria-expanded': String(state.dockOpen),
+					onclick: () => {
+						state.dockOpen = !state.dockOpen;
+						renderDock();
+					},
+				},
+				'BL+',
+				busy && !state.dockOpen ? h('span', {class: 'blp-dock-dot'}) : null
+			)
+		);
+		if (state.dockOpen) items.forEach(i => dock.appendChild(i));
 	}
 
 	/* ------------------------------------------------------------------ pagination (hotkeys) */
@@ -813,7 +834,7 @@
 		const s = settings().site;
 		if (!state.hidden) {
 			processReplayLinks();
-			if (s.favorites) processFavoriteLinks();
+			if (s.favorites && s.favoriteStars) processFavoriteLinks();
 		}
 		if (s.autoExpandDetails) autoExpand();
 		applyFilters();

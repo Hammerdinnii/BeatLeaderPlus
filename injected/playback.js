@@ -315,9 +315,9 @@
 		const L = pb.loop;
 		body.appendChild(
 			ui.row(
-				ui.button('◀', () => frameStep(-1), {title: t('hk.frameBack') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.frameBack')) + ')'}),
-				ui.button('⏪', toggleReverse, {active: pb.reverse.active, title: t('hk.reverse') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.reverse')) + ')'}),
-				ui.button('▶', () => frameStep(1), {title: t('hk.frameForward') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.frameForward')) + ')'})
+				ui.button('', () => frameStep(-1), {icon: 'fas fa-backward-step', title: t('hk.frameBack') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.frameBack')) + ')'}),
+				ui.button('', toggleReverse, {icon: 'fas fa-backward', active: pb.reverse.active, title: t('hk.reverse') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.reverse')) + ')'}),
+				ui.button('', () => frameStep(1), {icon: 'fas fa-forward-step', title: t('hk.frameForward') + ' (' + U.formatHotkey(R.get('hotkeys.bindings.frameForward')) + ')'})
 			)
 		);
 		body.appendChild(
@@ -362,7 +362,7 @@
 			);
 		}
 		body.appendChild(list);
-		body.appendChild(ui.row(ui.button('🔖 ' + t('r.addBookmark'), () => addBookmark(), {disabled: !pb.bookmarks.key})));
+		body.appendChild(ui.row(ui.button(t('r.addBookmark'), () => addBookmark(), {icon: 'fas fa-bookmark', disabled: !pb.bookmarks.key})));
 	}
 
 	/* ------------------------------------------------------------------ module */

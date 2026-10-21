@@ -167,7 +167,7 @@
 			body.appendChild(
 				ui.row(
 					ui.range('', {min: 0, max: 150, step: 5, value: s.volume, unit: '%'}, v => R.setPath('audio.slots.' + slot + '.volume', v)),
-					ui.button('▶', () => R.audio.preview(slot), {title: t('common.preview')})
+					ui.button('', () => R.audio.preview(slot), {icon: 'fas fa-play', title: t('common.preview')})
 				)
 			);
 		}

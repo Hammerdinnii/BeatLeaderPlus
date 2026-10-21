@@ -6,7 +6,7 @@ In the replay viewer, BeatLeaderPlus **extends the replayer's own interface** in
 
 The additions include orbit and follow cameras, camera presets and recorded camera paths; note, trail and saber-style visuals; frame stepping, reverse playback, A-B loops and bookmarks; a PP estimate in the score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, favorites, follows, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
 
-> BeatLeaderPlus is a community project and is not affiliated with BeatLeader.
+> BeatLeaderPlus is an unofficial, fan-made extension. It is not affiliated with or endorsed by BeatLeader. The popup and the options page say so too.
 
 ---
 
@@ -111,11 +111,12 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 ### Website enhancements
 
 - **Download .bsor**, **Open in Enhanced Replayer** and **compare** buttons next to every replay link. In BeatLeader's score icon grid they appear as extra icons in the same style, and the download icon is left out when the site already shows its own. Replay links also get a right-click menu.
-- **Favorite players and maps** (☆ next to links), with notes, listed in the popup and the options page. Players are looked up on BeatLeader when you click the star and saved under their player ID with their current name, so profile aliases (`/u/<alias>`) and links the site reuses while you browse always favorite the right person.
+- **Favorite players and maps**, with notes, listed in the popup and the options page. Add them from the BL+ dock on a profile or leaderboard page. Optional stars next to every player and map link (off by default) favorite with one click. Players are looked up on BeatLeader when you favorite them and saved under their player ID with their current name, so profile aliases (`/u/<alias>`) and links the site reuses while you browse always favorite the right person.
 - **Followed players**: background polling for new scores, a toolbar badge counter and optional desktop notifications.
-- **Score comparison**: pick two scores (⚖) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.
+- **Score comparison**: pick two scores (scales icon) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.
 - **Auto-expand score details**.
 - **Quick filters**: my scores, clan, high accuracy (threshold is configurable), favorites and full combo.
+- The **BL+ dock** at the bottom of profile and leaderboard pages holds favorite, follow, statistics, filter and comparison controls. It stays collapsed to a small **BL+** button until you click it; a dot on the button means a filter or comparison is active.
 - **Profile statistics drawer**: average and median accuracy, FC rate, average stars, an accuracy distribution, personal bests over time and a recent accuracy trend.
 - Optional **extra badges** on scores (misses, bad cuts, pauses, max combo), fetched lazily and cached.
 

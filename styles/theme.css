@@ -184,14 +184,38 @@
 	font: 500 12px/1.2 system-ui, sans-serif;
 }
 
+.blp-dock:not(.blp-dock-open) {
+	padding: 3px 4px;
+}
+
 .blp-dock-brand {
-	font-weight: 800;
+	position: relative;
+	font: 800 13px/1 system-ui, sans-serif;
 	letter-spacing: 0.02em;
 	background: linear-gradient(90deg, var(--blpu-primary), var(--blpu-accent));
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
-	padding: 0 4px;
+	border: 0;
+	padding: 4px 6px;
+	cursor: pointer;
+}
+
+.blp-dock-brand:focus-visible {
+	outline: 2px solid var(--blpu-primary);
+	outline-offset: 2px;
+	border-radius: 999px;
+}
+
+/* Marks an active filter or comparison while the dock is collapsed. */
+.blp-dock-dot {
+	position: absolute;
+	top: 1px;
+	right: 0;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--blpu-primary);
 }
 
 .blp-dock-group {

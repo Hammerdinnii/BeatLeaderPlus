@@ -278,9 +278,9 @@
 		const s = R.settings.export;
 		body.appendChild(
 			ui.row(
-				ui.button('🔗 ' + t('r.copyLink'), () => copyLink().catch(e => R.ui.toast(String(e.message || e), 'error'))),
-				ui.button('📷 ' + t('r.screenshot'), () => screenshot().catch(e => R.ui.toast(String(e.message || e), 'error'))),
-				clipSupported() ? ui.button(clip.rec ? '⏹ ' + t('r.clipStop') : '⏺ ' + t('r.clip'), startClip, {active: !!clip.rec}) : null
+				ui.button(t('r.copyLink'), () => copyLink().catch(e => R.ui.toast(String(e.message || e), 'error')), {icon: 'fas fa-link'}),
+				ui.button(t('r.screenshot'), () => screenshot().catch(e => R.ui.toast(String(e.message || e), 'error')), {icon: 'fas fa-camera'}),
+				clipSupported() ? ui.button(t(clip.rec ? 'r.clipStop' : 'r.clip'), startClip, {icon: clip.rec ? 'fas fa-stop' : 'fas fa-circle', active: !!clip.rec}) : null
 			)
 		);
 		body.appendChild(ui.range(t('f.export.clip.seconds'), {min: 2, max: 120, step: 1, value: s.clip.seconds, unit: 's'}, v => R.setPath('export.clip.seconds', v)));

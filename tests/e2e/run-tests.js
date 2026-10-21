@@ -132,6 +132,11 @@ function watch(page, label) {
 	/* ------------------------------------------------------------ replay viewer (the real one) */
 	const page = await context.newPage();
 	watch(page, 'replay');
+	// Record the replayer's own hotkey notifications (A-Frame events bubble up to the document).
+	await page.addInitScript(() => {
+		window.__blpNotes = [];
+		document.addEventListener('showHotkeyNotification', e => window.__blpNotes.push(e.detail && e.detail.text), true);
+	});
 	const openReplay = async (p, query) => {
 		await p.goto('https://replay.beatleader.com/?scoreId=' + fx.scoreId + (query || ''));
 		await p.waitForFunction(() => window.BLPR && window.BLPR.ctx && window.BLPR.replayInfo && BLPR.api.duration() > 0, null, {timeout: 60000});
@@ -140,6 +145,13 @@ function watch(page, label) {
 	const title = await page.evaluate(() => BLPR.replayInfo.title);
 	check('runtime attached to the real replayer (UTF-8 intact)', title === `Test Player – ${fx.songName} (${fx.difficulty})`, title);
 	check('modules registered', true, await page.evaluate(() => BLPR.modules.map(m => m.name)));
+	await sleep(500);
+	const notes = await page.evaluate(() => {
+		const atLoad = window.__blpNotes.slice();
+		BLPR.api.notify('probe'); // proves the listener sees our notifications
+		return {atLoad, probe: window.__blpNotes.includes('probe')};
+	});
+	check('no "ready" notification when a replay loads', notes.probe && !notes.atLoad.some(n => /BeatLeaderPlus/.test(n)), notes);
 	// The replayer hides its control bar while playing until the mouse moves, like for a real user.
 	const wake = async () => {
 		await page.mouse.move(620, 640);
@@ -389,7 +401,7 @@ function watch(page, label) {
 	check('dropped .glb shows on both sabers, default blade hidden', model.sabers.leftSaber && model.sabers.rightSaber && !model.sabers.leftSaber.defaultBlade && !model.sabers.rightSaber.defaultBlade, model);
 	check('model fitted along the blade (tip at -1 m, grip at the hilt)', ['leftSaber', 'rightSaber'].every(k => model.sabers[k] && Math.abs(model.sabers[k].tip + 1) < 0.02 && Math.abs(model.sabers[k].end - 0.155) < 0.01), model.sabers);
 	check("drops never reach the replayer's own drag-and-drop", !model.bodyDrop);
-	check('model status shown in the BL+ tab', model.status.length === 2 && model.status.every(x => /test-saber\.glb ✓/.test(x)), model.status);
+	check('model status shown in the BL+ tab', model.status.length === 2 && model.status.every(x => /test-saber\.glb · loaded/.test(x)), model.status);
 	const stored = await sw.evaluate(() => chrome.storage.local.get('blp_saber_models'));
 	check('dropped model saved like an options-page upload', !!(stored.blp_saber_models && stored.blp_saber_models['test-saber.glb']), Object.keys(stored.blp_saber_models || {}));
 	await page.waitForSelector('#blp-sec-sabers .blp-r-drop canvas.blp-r-model-preview', {timeout: 10000}).catch(() => null);
@@ -461,7 +473,7 @@ function watch(page, label) {
 	);
 	const parsedIn = await page.evaluate(async b64 => (await BLP.unitySaber.readAsync(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))).parsedIn, saberFile.toString('base64'));
 	check('.saber files are read in a background worker on the replay page', parsedIn === 'worker', parsedIn);
-	check('.saber file: name and author from its descriptor', saberModel.status.length === 2 && saberModel.status.every(x => /Test Saber ✦ by BeatLeaderPlus tests ✓/.test(x)), saberModel.status);
+	check('.saber file: name and author from its descriptor', saberModel.status.length === 2 && saberModel.status.every(x => /Test Saber ✦ by BeatLeaderPlus tests · loaded/.test(x)), saberModel.status);
 
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {style: 'default', customModel: {left: '', right: ''}}}}));
 	await page.keyboard.press('Backquote');
@@ -627,6 +639,18 @@ function watch(page, label) {
 	watch(site, 'site');
 	await site.goto('https://beatleader.com/leaderboard/global/xyz789/1');
 	await site.waitForSelector('.blp-actions', {timeout: 10000});
+	const starsOff = await site.evaluate(() => ({
+		stars: document.querySelectorAll('.blp-star').length,
+		dock: Array.from(document.querySelectorAll('#blp-dock > *')).map(e => e.className),
+		dockText: document.getElementById('blp-dock').textContent,
+	}));
+	check('favorite stars next to links are off by default', starsOff.stars === 0, starsOff);
+	check('dock starts collapsed to the BL+ button', starsOff.dock.length === 1 && starsOff.dock[0] === 'blp-dock-brand' && starsOff.dockText === 'BL+', starsOff);
+	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {favoriteStars: true}}));
+	await site.waitForSelector('.player-score .blp-star', {timeout: 10000}).catch(() => null);
+	await site.click('#blp-dock .blp-dock-brand');
+	const dockOpen = await site.evaluate(() => ({open: document.getElementById('blp-dock').classList.contains('blp-dock-open'), items: document.querySelectorAll('#blp-dock > *').length}));
+	check('clicking BL+ opens the dock', dockOpen.open && dockOpen.items === 3, dockOpen);
 	const siteInfo = await site.evaluate(() => ({
 		actions: document.querySelectorAll('.blp-actions').length,
 		dl: document.querySelectorAll('.blp-dl').length,
@@ -649,7 +673,7 @@ function watch(page, label) {
 		return {ours, wrapped: !!main.querySelector('.blp-actions'), cells: main.querySelectorAll(':scope > span > *').length};
 	});
 	check('BL+ buttons fit the site icon grid as separate cells', !grid.wrapped && grid.ours.length === 3 && grid.ours.every(b => b.w === 22 && b.h === 22 && b.inside && b.hit), grid);
-	check('favorite stars on player & map links (not in nav)', siteInfo.stars >= 4 && siteInfo.navStars === 0, siteInfo);
+	check('favorite stars on player & map links once enabled (not in nav)', siteInfo.stars >= 4 && siteInfo.navStars === 0, siteInfo);
 	check('dock shown on leaderboard', siteInfo.dock);
 	check('OLED theme applied to site', siteInfo.themed && siteInfo.bg === 'rgb(0, 0, 0)', siteInfo.bg);
 	check('rank #1 color re-mapped', siteInfo.rank1 === '#ffc400', siteInfo.rank1);
@@ -704,6 +728,7 @@ function watch(page, label) {
 	await stubFetch();
 	await site.goto('https://beatleader.com/u/111');
 	await site.waitForSelector('#blp-dock', {timeout: 10000});
+	await site.click('#blp-dock .blp-dock-brand');
 	await site.click('#blp-dock >> text=Follow');
 	await sleep(800);
 	const fstate = await sw.evaluate(() => chrome.storage.local.get('blp_follow_state'));
