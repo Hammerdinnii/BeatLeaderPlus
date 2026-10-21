@@ -22,7 +22,7 @@ const log = U.createLogger('[BLP:bg]', () => debugEnabled);
 
 const FOLLOW_ALARM = 'blp-follow-poll';
 const FETCH_ALLOW = /^https:\/\/(api\.beatleader\.(com|xyz|net)|cdn\.scorestats\.beatleader\.(com|xyz|net))\//i;
-const INJECT_ALLOW = /^(injected\/[a-z0-9-]+\.js|injected-replay\.js|lib\/(i18n|utils)\.js)$/i;
+const INJECT_ALLOW = /^(injected\/[a-z0-9-]+\.js|injected-replay\.js|lib\/(i18n|utils|unity-saber)\.js)$/i;
 const REPLAY_LINK_PATTERNS = ['*://replay.beatleader.com/*', '*://replay.beatleader.xyz/*', '*://replay.beatleader.net/*'];
 
 /* ------------------------------------------------------------------ helpers */
