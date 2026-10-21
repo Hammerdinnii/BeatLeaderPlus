@@ -55,7 +55,7 @@ function watch(page, label) {
 	check('service worker started', !!extId, extId);
 	sw.on('console', m => m.type() === 'error' && errors.push('[sw] ' + m.text()));
 
-	// Used by the website checks (comparison, follows, stats) through the stubbed worker fetch.
+	// Used by the website checks (comparison, stats) through the stubbed worker fetch.
 	const mockScore = {
 		id: 1001,
 		playerId: '111',
@@ -581,6 +581,20 @@ function watch(page, label) {
 	// Note size, wall opacity and picture
 	await page.evaluate(() => BLPR.patchSettings({visuals: {notes: {size: 130, wallOpacity: 40}, picture: {brightness: 120, contrast: 100, saturation: 80}}}));
 	await sleep(1200);
+	// Walls spawned since the last frame get their opacity on the next one; headless frames are slow.
+	await page
+		.waitForFunction(
+			() =>
+				Array.from(BLPR.ctx.beatContainer.children)
+					.filter(c => c.components && c.components.wall)
+					.every(c => {
+						const m = c.getObject3D('mesh');
+						return m && m.material.uniforms.blpOpacity && Math.abs(m.material.uniforms.blpOpacity.value - 0.4) < 1e-6;
+					}),
+			null,
+			{timeout: 5000}
+		)
+		.catch(() => null);
 	const looks = await page.evaluate(() => {
 		const kids = Array.from(BLPR.ctx.beatContainer.children);
 		const notes = kids.filter(c => c.components && c.components.beat && c.components.beat.data.type !== 'mine').map(c => c.object3D.scale.x);
@@ -793,7 +807,7 @@ function watch(page, label) {
 	await opt.goto(`chrome-extension://${extId}/options.html#camera`);
 	await opt.waitForSelector('.section', {timeout: 10000});
 	const counts = await opt.evaluate(() => ({sections: document.querySelectorAll('.section').length, rows: document.querySelectorAll('.row').length}));
-	check('options renders all sections', counts.sections === 13 && counts.rows > 120, counts);
+	check('options renders all sections', counts.sections === 12 && counts.rows > 120, counts);
 	await opt.fill('#search', 'field of view');
 	await sleep(200);
 	const visible = await opt.evaluate(() => Array.from(document.querySelectorAll('.section')).filter(s => !s.classList.contains('hidden')).map(s => s.id));
@@ -911,21 +925,15 @@ function watch(page, label) {
 	check('comparison highlights better value', !!winner, winner);
 	await site.keyboard.press('Escape');
 
-	// Profile page: follow + stats drawer + notifications
+	// Profile page: stats drawer. Following is BeatLeader's own: no BL+ Follow button.
 	await stubFetch();
 	await site.goto('https://beatleader.com/u/111');
 	await site.waitForSelector('#blp-dock', {timeout: 10000});
 	await site.click('#blp-dock .blp-dock-brand');
-	await site.click('#blp-dock >> text=Follow');
-	await sleep(800);
-	const fstate = await sw.evaluate(() => chrome.storage.local.get('blp_follow_state'));
-	const followed = fstate.blp_follow_state.players['111'];
-	check('follow stores player and primes last score', followed && followed.lastScoreId, followed);
-	check('follow uses the API player name', followed && followed.name === 'Alice Real', followed && followed.name);
-	const poll = await opt.evaluate(() => new Promise(r => chrome.runtime.sendMessage({type: 'checkFollowsNow'}, r)));
-	check('follow polling finds new score', poll && poll.ok && poll.data.found === 1, poll);
-	const badge = await sw.evaluate(() => chrome.action.getBadgeText({}));
-	check('toolbar badge shows new score count', badge === '1', badge);
+	const profileDock = await site.evaluate(() => Array.from(document.querySelectorAll('#blp-dock .blp-chip')).map(b => b.textContent));
+	check('profile dock has no Follow or favorite buttons', profileDock.length && !profileDock.some(x => /follow|favorite/i.test(x)), profileDock);
+	const perms = await sw.evaluate(() => chrome.runtime.getManifest().permissions);
+	check('no notification or alarm permissions any more', !perms.includes('notifications') && !perms.includes('alarms'), perms);
 	await site.click('#blp-dock >> text=BeatLeaderPlus stats');
 	await site.waitForSelector('#blp-stats-drawer .blp-tile', {timeout: 10000}).catch(() => null);
 	const tiles = await site.evaluate(() => document.querySelectorAll('#blp-stats-drawer .blp-tile').length);
