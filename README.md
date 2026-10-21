@@ -45,7 +45,7 @@ Requires Chrome 111 or newer (or another Chromium-based browser).
 
 | Replayer menu | What BeatLeaderPlus adds |
 | --- | --- |
-| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Extra hitsounds, Export, Score HUD and Interface sections |
+| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Performance, Extra hitsounds, Export, Score HUD and Interface sections |
 | **Camera → Main** tab | A BeatLeaderPlus block under the official left/center/right buttons: Orbit, Smooth follow, First person, a preset picker, "save as preset" and the camera path picker |
 | **Camera → BL+** tab | First person and orthographic views first (the replayer's own settings, mirrored, plus BL+ additions), then free camera tuning, orbit/follow options, the preset list and camera path tools |
 | **Right-click menu** | "Copy URL with BL+ camera and colors", "Screenshot" and "Record clip", next to the official "Copy URL" entries |
@@ -89,6 +89,7 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 - **Low-accuracy cuts in the official slow motion**: cuts below a score threshold get the same slow-down windows as misses and bad cuts. Turning this on also turns on the replayer's own "change speed around mistakes" (whose speed and offsets are used); turning that off in the replayer turns this off too.
 - **Pause at mistakes**: stops playback at each miss, bad cut, bomb hit or wall hit (each can be switched on or off).
 - **Speed buttons** in Settings → BL+ → Playback for quick speed changes (default 0.5×, 0.75×, 1×, 1.25×; the list is configurable).
+- **FPS limit** in Settings → BL+ → Performance (30 to 240 fps, or no limit): how many frames per second the replay viewer draws. A lower limit saves power and keeps laptops cooler. Only drawing is limited, so the replay, hitsounds and slow motion keep their timing. The section shows how many frames are actually drawn.
 - **Remember speed and jump distance** across sessions (whatever you set with the replayer's own controls).
 - **Bookmark flags and the loop region on the timeline**, alongside the replayer's own accuracy graph and markers.
 
@@ -206,6 +207,7 @@ injected/
   hud.js                 PP estimate and last-cut lines in the replayer's score HUD
   audio.js               extra hitsounds: synthesis, pack decoding, look-ahead scheduling
   export.js              share links, screenshots, clip recording
+  performance.js         FPS limit (wraps the scene's render loop)
 lib/
   i18n.js                all user-facing strings (en + partial de)
   defaults.js            default settings, theme and camera presets, storage keys
