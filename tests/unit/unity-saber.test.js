@@ -103,6 +103,11 @@ for (const fx of fixtures) {
 		assert.equal(mat('BladeRight').saberColor, true, 'no _CustomColors, _Glow > 0');
 		assert.equal(mat('Handle').saberColor, false, '_CustomColors = 0 wins over _Glow');
 		assert.equal(mat('Accent').transparent, true);
+		// Bloom amount: the larger of _Glow and _Bloom, also for parts in their own color.
+		assert.equal(mat('BladeLeft').glow, 1);
+		assert.ok(Math.abs(mat('BladeRight').glow - 0.8) < 1e-6);
+		assert.equal(mat('Handle').glow, 1);
+		assert.equal(mat('Accent').glow, 0);
 		assert.equal(s.textures[mat('BladeLeft').texture].name, 'BladeTex');
 
 		// Winding: after the mirror, every triangle must face the way its vertex normals point.

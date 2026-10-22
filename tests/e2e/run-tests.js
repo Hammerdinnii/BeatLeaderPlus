@@ -546,6 +546,56 @@ function watch(page, label) {
 	check('.saber files are read in a background worker on the replay page', parsedIn === 'worker', parsedIn);
 	check('.saber file: name and author from its descriptor', saberModel.status.length === 2 && saberModel.status.every(x => /Test Saber ✦ by BeatLeaderPlus tests · loaded/.test(x)), saberModel.status);
 
+	// Bloom on the parts that glow in the game (_Glow / _Bloom): copies on a layer no camera draws.
+	const glow = await page.evaluate(() => {
+		const copies = [];
+		BLPR.ctx.leftSaber.object3D.traverse(o => o.name === 'blpGlow' && copies.push({layer: o.layers.mask, mats: o.material.map(m => (m ? m.name || 'glow' : null)).length}));
+		return {count: BLPR.saberGlow.count(), layer: BLPR.saberGlow.layer, copies};
+	});
+	// Left saber: blade (_Glow 1) and handle (_Glow 1, own color); the accent (no glow) gets none.
+	check('glowing .saber parts get bloom copies on their own layer', glow.count === 3 && glow.copies.length === 2 && glow.copies.every(c => c.layer === 1 << glow.layer), glow);
+	// With BLP_SHOTS: a close-up of the paused sabers without and with bloom, to look at.
+	const closeUp = () =>
+		page.evaluate(() => {
+			BLPR.api.pause();
+			BLPR.camera.setMode('default', {silent: true});
+			const lc = BLPR.ctx.mainCamera.components['look-controls'];
+			BLPR.ctx.mainCamera.object3D.position.set(0, 1.35, 0.75);
+			lc.pitchObject.rotation.x = -0.25;
+			lc.yawObject.rotation.y = 0;
+		});
+	const bloomShot = async name => {
+		if (!process.env.BLP_SHOTS) return;
+		await closeMenus();
+		await closeUp();
+		await sleep(2500);
+		await page.screenshot({path: path.join(process.env.BLP_SHOTS, name)});
+	};
+	await bloomShot('bloom-off.png');
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {bloom: {enabled: true, strength: 150, size: 60}}}}));
+	await page.waitForFunction(() => BLPR.saberBloomStats.frames > 2, null, {timeout: 15000}).catch(() => null);
+	await bloomShot('bloom-on.png');
+	if (process.env.BLP_SHOTS) {
+		await page.evaluate(() => BLPR.api.play());
+		await page.evaluate(() => BLPR.ui.openSettings());
+	}
+	const bloom = await page.evaluate(() => {
+		const rt = BLPR.saberBloom.target();
+		if (!rt) return {frames: BLPR.saberBloomStats.frames, lit: 0};
+		const px = new Uint8Array(rt.width * rt.height * 4);
+		BLPR.ctx.renderer.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, px);
+		let lit = 0;
+		for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 30) lit++;
+		return {frames: BLPR.saberBloomStats.frames, lit, share: lit / (rt.width * rt.height), size: [rt.width, rt.height]};
+	});
+	// Lit around the sabers only: a whole lit image would mean it isn't cleared between frames.
+	check('bloom pass runs after the main view and lights only the glowing parts', bloom.frames > 2 && bloom.lit > 50 && bloom.share < 0.25, bloom);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {bloom: {enabled: false}}}}));
+	await sleep(600);
+	const bloomOff = await page.evaluate(() => BLPR.saberBloomStats.frames);
+	await sleep(1500);
+	check('bloom off: the pass stops', (await page.evaluate(() => BLPR.saberBloomStats.frames)) === bloomOff);
+
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {style: 'default', customModel: {left: '', right: ''}}}}));
 	await page.keyboard.press('Backquote');
 

@@ -8,6 +8,8 @@
  *   - note colors independent of saber colors (beat-generator colors), chain and arc colors
  *   - trail color, thickness (vertex shader patch) and brightness on top of the official trail
  *   - saber glow intensity and styles: neon, particle, custom GLTF/GLB/OBJ model
+ *   - bloom on the glowing parts of custom models: each gets a copy on GLOW_LAYER that only
+ *     bloom.js draws (into its bloom pass), never the replayer's cameras
  *   - miss / bad-cut / bomb flashes, 3D mistake markers, hit particles
  *   - show / hide sabers, trails, notes, bombs, walls, arcs and chains (THREE layers, so the
  *     replayer's own visibility logic and object pools are never touched)
@@ -227,7 +229,7 @@
 				// A-Frame entities override remove(), so detach through the parent.
 				if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
 				if (slot.objUrl) URL.revokeObjectURL(slot.objUrl);
-				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: '', info: null});
+				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: '', info: null, glow: 0});
 				setDefaultSaberVisible(el, true);
 				if (key) loadModel(hand, el, slot, key).catch(e => modelFailed(slot, key, e));
 				refreshModelUi();
@@ -286,6 +288,7 @@
 		const done = () => {
 			slot.loaded = true;
 			slot.state = 'loaded';
+			slot.glow = glowCopies(ent.object3D);
 			updateCustomModels();
 			refreshModelUi();
 		};
@@ -349,6 +352,39 @@
 	}
 
 	/** One saber of a parsed .saber file as a three.js group. */
+	/* ------------------------------------------------------------------ bloom copies */
+
+	// Objects on this layer are invisible to every camera except bloom.js's glow pass.
+	const GLOW_LAYER = 11;
+
+	function glowMaterial(color, map, opacity) {
+		return new THREE.MeshBasicMaterial({color, map: map || null, transparent: true, opacity: opacity == null ? 1 : opacity, side: THREE.DoubleSide, depthWrite: false, fog: false});
+	}
+
+	/** Adds the glowing materials of `mesh` (others null) as a copy that only the glow pass draws. */
+	function addGlowCopy(mesh, glowMaterials) {
+		const list = Array.isArray(glowMaterials) ? glowMaterials : [glowMaterials];
+		if (!list.some(Boolean)) return 0;
+		const copy = new THREE.Mesh(mesh.geometry, glowMaterials);
+		copy.name = 'blpGlow';
+		copy.layers.set(GLOW_LAYER);
+		copy.frustumCulled = mesh.frustumCulled;
+		mesh.add(copy);
+		return 1;
+	}
+
+	function glowCopies(obj) {
+		let n = 0;
+		if (obj) obj.traverse(o => o.name === 'blpGlow' && n++);
+		return n;
+	}
+
+	R.saberGlow = {
+		layer: GLOW_LAYER,
+		/** Glow copies on the custom models currently shown. */
+		count: () => Object.values(st.models).reduce((n, slot) => n + (slot.loaded && slot.el ? slot.glow || 0 : 0), 0),
+	};
+
 	function buildSaberObject(parsed, hand, m) {
 		const side = parsed[hand] || parsed.left || parsed.right;
 		const textures = saberTextures(parsed);
@@ -371,6 +407,12 @@
 			};
 			return m.unlit ? new THREE.MeshBasicMaterial(params) : new THREE.MeshStandardMaterial(Object.assign(params, {roughness: 0.6, metalness: 0.1}));
 		});
+		// The game blooms each part by its material's _Glow / _Bloom value.
+		const glowMaterials = parsed.materials.map((mat, i) => {
+			if (!(mat.glow > 0)) return null;
+			const c = mat.saberColor || m.tint ? new THREE.Color(saberColor(hand)) : new THREE.Color(mat.color[0], mat.color[1], mat.color[2]);
+			return glowMaterial(c.multiplyScalar(Math.min(mat.glow, 2)), materials[i].map, mat.color[3]);
+		});
 		const group = new THREE.Group();
 		for (const part of side.parts) {
 			const geo = new THREE.BufferGeometry();
@@ -383,6 +425,7 @@
 			geo.computeBoundingSphere();
 			const mesh = new THREE.Mesh(geo, materials);
 			mesh.name = part.name;
+			addGlowCopy(mesh, glowMaterials);
 			group.add(mesh);
 		}
 		return group;
@@ -435,6 +478,19 @@
 	}
 
 	function prepareModel(mesh, hand, m) {
+		// glTF models mark glowing parts with an emissive color; those get bloom copies (added
+		// after the conversion below, so it doesn't touch them).
+		const glowFor = mat => {
+			const em = mat && mat.emissive;
+			if (!em || em.r + em.g + em.b < 0.05) return null;
+			const c = m.tint ? new THREE.Color(saberColor(hand)) : em.clone();
+			return glowMaterial(c.multiplyScalar(Math.min(mat.emissiveIntensity == null ? 1 : mat.emissiveIntensity, 2)), mat.emissiveMap, mat.opacity);
+		};
+		const glowing = [];
+		mesh.traverse(o => {
+			if (!o.isMesh || !o.material || o.isSkinnedMesh) return;
+			glowing.push([o, Array.isArray(o.material) ? o.material.map(glowFor) : glowFor(o.material)]);
+		});
 		if (m.unlit || m.tint) {
 			const tint = m.tint ? new THREE.Color(saberColor(hand)) : null;
 			const convert = mat => {
@@ -466,6 +522,7 @@
 				if (o.isMesh && o.material) o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
 			});
 		}
+		for (const [o, g] of glowing) addGlowCopy(o, g);
 		if (m.autoFit) fitModel(mesh);
 	}
 
@@ -1153,7 +1210,17 @@
 				x => set('sabers.style', x)
 			)
 		);
-		if (s.style === 'custom') renderModelControls(body);
+		if (s.style === 'custom') {
+			renderModelControls(body);
+			const b = s.bloom;
+			body.appendChild(ui.toggle(t('f.visuals.sabers.bloom.enabled'), b.enabled, x => set('sabers.bloom.enabled', x), t('d.visuals.sabers.bloom.enabled')));
+			if (b.enabled) {
+				body.appendChild(ui.range(t('f.visuals.sabers.bloom.strength'), {min: 0, max: 300, step: 5, value: b.strength, unit: '%'}, x => set('sabers.bloom.strength', x)));
+				body.appendChild(ui.range(t('f.visuals.sabers.bloom.size'), {min: 0, max: 100, step: 5, value: b.size, unit: '%'}, x => set('sabers.bloom.size', x)));
+				const loaded = Object.values(st.models).some(slot => slot.loaded);
+				if (loaded && !R.saberGlow.count()) body.appendChild(ui.hint(t('r.bloomNoGlow')));
+			}
+		}
 		body.appendChild(ui.range(t('f.visuals.sabers.glowIntensity'), {min: 0, max: 600, step: 10, value: s.glowIntensity, unit: '%'}, x => set('sabers.glowIntensity', x)));
 		body.appendChild(ui.toggle(t('f.visuals.sabers.trailOverride'), s.trailOverride, x => set('sabers.trailOverride', x)));
 		if (s.trailOverride) {

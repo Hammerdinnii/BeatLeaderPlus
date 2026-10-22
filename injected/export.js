@@ -147,6 +147,7 @@
 		const gl = renderer.domElement;
 		if (!width || !height) {
 			renderer.render(scene.object3D, camera);
+			if (R.saberBloom) R.saberBloom.apply(camera);
 			return {url: gl.toDataURL('image/png'), w: gl.width, h: gl.height};
 		}
 		const size = renderer.getSize(new ctx.THREE.Vector2());
@@ -163,6 +164,7 @@
 				camera.updateProjectionMatrix();
 			}
 			renderer.render(scene.object3D, camera);
+			if (R.saberBloom) R.saberBloom.apply(camera);
 			// Must read synchronously, before the browser composites and clears the buffer.
 			return {url: gl.toDataURL('image/png'), w: width, h: height};
 		} finally {
