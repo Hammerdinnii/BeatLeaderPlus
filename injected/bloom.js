@@ -98,7 +98,7 @@
 			stats.frames++;
 			return true;
 		} catch (e) {
-			// A prototype on an old renderer: switch off rather than break the replayer's frame.
+			// A renderer this doesn't work with: switch bloom off rather than break the replayer's frame.
 			broken = true;
 			R.log.warn('saber bloom disabled', e);
 			return false;
