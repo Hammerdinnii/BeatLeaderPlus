@@ -89,7 +89,7 @@
 			// 2. Blur. The pass leaves its result in renderTargetsHorizontal[0].
 			g.pass.strength = 1.5 * (Number(s.strength) || 0) / 100;
 			g.pass.radius = Math.min(1, Math.max(0, (Number(s.size) || 0) / 100));
-			g.pass.threshold = 0;
+			g.pass.threshold = Math.min(1, Math.max(0, (Number(s.threshold) || 0) / 100));
 			g.pass.render(renderer, null, g.target, 0, false);
 			// 3. Add it over the frame (the screen viewport is still the main view's).
 			g.material.uniforms.tDiffuse.value = g.pass.renderTargetsHorizontal[0].texture;
@@ -129,7 +129,7 @@
 		main.__blpBloom = true;
 	}
 
-	R.saberBloom = {apply, enabled, target: () => (gfx ? gfx.target : null)};
+	R.saberBloom = {apply, enabled, target: () => (gfx ? gfx.target : null), pass: () => (gfx ? gfx.pass : null)};
 
 	R.register({
 		name: 'bloom',

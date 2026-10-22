@@ -80,6 +80,14 @@
 	margin: 0 0 0 4px;
 }
 
+.blp-r-notes > summary {
+	cursor: pointer;
+}
+
+.blp-r-notes > .blp-r-hint {
+	margin-left: 12px;
+}
+
 /* ---------------------------------------------------------------- controls */
 
 .blp-r-pane .toggleButton,
