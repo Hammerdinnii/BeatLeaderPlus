@@ -55,7 +55,7 @@ function watch(page, label) {
 	check('service worker started', !!extId, extId);
 	sw.on('console', m => m.type() === 'error' && errors.push('[sw] ' + m.text()));
 
-	// Used by the website checks (comparison, follows, stats) through the stubbed worker fetch.
+	// Used by the website checks (comparison, stats) through the stubbed worker fetch.
 	const mockScore = {
 		id: 1001,
 		playerId: '111',
@@ -220,7 +220,7 @@ function watch(page, label) {
 	const controlsShown = await page.evaluate(() => document.body.classList.contains('showControls') && getComputedStyle(document.getElementById('blpSettingsPane')).display !== 'none');
 	check('` opens Settings → BL+ (visible while playing)', st.open && st.blp && st.tab && !st.official && controlsShown, [st, controlsShown]);
 	const sections = await page.evaluate(() => Array.from(document.querySelectorAll('#blpSettingsPane > .blp-r-section')).map(s => s.id.replace('blp-sec-', '')));
-	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,picture,playback,timeline,audio,export,hud,interface', sections);
+	check('BL+ tab renders every section', sections.join() === 'notes,sabers,effects,visibility,picture,playback,timeline,performance,audio,export,hud,interface', sections);
 	await page.click('#settingsContainer .settings-tab-button >> nth=0');
 	st = await settingsState();
 	check("the replayer's own tabs keep working", st.open && !st.blp && st.official, st);
@@ -381,6 +381,8 @@ function watch(page, label) {
 	// Visuals (saber colours stay with the replayer's own colour pickers)
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {trailOverride: true, trailWidth: 50}, notes: {override: true, left: '#ffff00', right: '#00ffff'}}}));
 	await sleep(600);
+	// The trail is patched on the next frame; headless rendering can take a while to draw one.
+	await page.waitForFunction(() => BLPR.ctx.leftSaber.components.trail.material.vertexShader.includes('blpWidth'), null, {timeout: 5000}).catch(() => null);
 	const vis = await page.evaluate(() => ({
 		bg: Object.assign({}, BLPR.ctx.beatGenerator().colors),
 		trailVS: BLPR.ctx.leftSaber.components.trail.material.vertexShader.includes('blpWidth'),
@@ -579,6 +581,20 @@ function watch(page, label) {
 	// Note size, wall opacity and picture
 	await page.evaluate(() => BLPR.patchSettings({visuals: {notes: {size: 130, wallOpacity: 40}, picture: {brightness: 120, contrast: 100, saturation: 80}}}));
 	await sleep(1200);
+	// Walls spawned since the last frame get their opacity on the next one; headless frames are slow.
+	await page
+		.waitForFunction(
+			() =>
+				Array.from(BLPR.ctx.beatContainer.children)
+					.filter(c => c.components && c.components.wall)
+					.every(c => {
+						const m = c.getObject3D('mesh');
+						return m && m.material.uniforms.blpOpacity && Math.abs(m.material.uniforms.blpOpacity.value - 0.4) < 1e-6;
+					}),
+			null,
+			{timeout: 5000}
+		)
+		.catch(() => null);
 	const looks = await page.evaluate(() => {
 		const kids = Array.from(BLPR.ctx.beatContainer.children);
 		const notes = kids.filter(c => c.components && c.components.beat && c.components.beat.data.type !== 'mine').map(c => c.object3D.scale.x);
@@ -637,21 +653,23 @@ function watch(page, label) {
 	check('A-B loop (T) jumps back', loopNow < loopT + 1.2, [loopT, loopNow]);
 	await page.keyboard.press('Shift+KeyT');
 
-	// Low-accuracy cuts join the replayer's own "change speed around mistakes"
+	// "Also slow down on low-accuracy cuts" and the replayer's own "Change speed around mistakes"
+	// are one switch: either one turns both on or off.
 	const windows = () => page.evaluate(() => BLPR.ctx.songControls().missWindows.length);
-	const officialSlow = () => page.evaluate(() => ({setting: BLPR.official.get('autoSpeedControls'), box: document.getElementById('autoSpeedControls').checked}));
-	const slowBefore = await officialSlow();
+	const slowState = () =>
+		page.evaluate(() => ({ours: BLPR.settings.playback.slowOnLowAcc, official: BLPR.official.get('autoSpeedControls'), box: document.getElementById('autoSpeedControls').checked}));
+	const slowBefore = await slowState();
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true, lowAccThreshold: 100}}));
 	await sleep(600);
-	const slowLinked = await officialSlow();
-	check("low-acc slow-mo turns on the replayer's own \"Change speed around mistakes\"", !slowBefore.setting && slowLinked.setting === true && slowLinked.box, [slowBefore, slowLinked]);
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
-	await sleep(400);
-	const officialWindows = await windows();
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true}}));
-	await sleep(500);
+	const slowOn = await slowState();
+	check("turning low-acc slow-mo on turns on the replayer's \"Change speed around mistakes\"", !slowBefore.ours && !slowBefore.official && slowOn.official === true && slowOn.box, [slowBefore, slowOn]);
 	const withLowAcc = await windows();
-	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows, [officialWindows, withLowAcc]);
+	await page.evaluate(() => BLPR.patchSettings({playback: {lowAccThreshold: 1}})); // no cut scores below 1
+	await sleep(500);
+	const officialWindows = await windows();
+	await page.evaluate(() => BLPR.patchSettings({playback: {lowAccThreshold: 100}}));
+	await sleep(500);
+	check('low-acc cuts add slow-mo windows to the official ones', officialWindows > 0 && withLowAcc > officialWindows && (await windows()) === withLowAcc, [officialWindows, withLowAcc]);
 	await officialToggle('slowOnMiss', true); // any change makes the replayer recompute its windows
 	check('windows survive the replayer recomputing them', (await windows()) === withLowAcc);
 	// Paused inside the window, so slow software rendering can't run the song past it.
@@ -662,13 +680,29 @@ function watch(page, label) {
 	check('official slow-mo engages around a miss', slow < 0.9, slow);
 	await page.evaluate(() => BLPR.api.play());
 	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: false}}));
-	await sleep(300);
-	check('turning it off restores the official windows', (await windows()) === officialWindows);
-	await page.evaluate(() => BLPR.patchSettings({playback: {slowOnLowAcc: true}}));
-	await sleep(400);
+	await sleep(500);
+	const slowOff = await slowState();
+	check("turning low-acc slow-mo off turns the replayer's own off", slowOff.ours === false && slowOff.official === false && !slowOff.box, slowOff);
+	await officialToggle('autoSpeedControls', true);
+	await sleep(500);
+	const officialOn = await slowState();
+	check("turning the replayer's own on turns low-acc slow-mo on", officialOn.ours === true && officialOn.official === true, officialOn);
 	await officialToggle('autoSpeedControls', false);
-	await sleep(800);
-	check("turning the replayer's own off turns low-acc slow-mo off too", await page.evaluate(() => BLPR.settings.playback.slowOnLowAcc === false && !BLPR.official.get('autoSpeedControls')));
+	await sleep(500);
+	const officialOff = await slowState();
+	check("turning the replayer's own off turns low-acc slow-mo off", officialOff.ours === false && officialOff.official === false, officialOff);
+	const clickLowAcc = () =>
+		page.evaluate(() => {
+			const row = Array.from(document.querySelectorAll('#blp-sec-playback .blp-r-toggle')).find(r => /low-accuracy/.test(r.textContent));
+			row.querySelector('input').click();
+		});
+	await clickLowAcc();
+	await sleep(500);
+	const tabOn = await slowState();
+	await clickLowAcc();
+	await sleep(500);
+	const tabOff = await slowState();
+	check('the switch in Settings → BL+ turns both on and off', tabOn.ours && tabOn.official && tabOn.box && !tabOff.ours && !tabOff.official && !tabOff.box, [tabOn, tabOff]);
 
 	// Pause at mistakes
 	await page.evaluate(() => BLPR.patchSettings({playback: {pauseOnMistakes: true}}));
@@ -694,6 +728,25 @@ function watch(page, label) {
 	await sleep(300);
 	check('speed buttons set the replayer speed', speedButtons.join(',') === '0.5x,0.75x,1x,1.25x' && (await page.evaluate(() => BLPR.api.getSpeed())) === 0.5, [speedButtons, await page.evaluate(() => BLPR.api.getSpeed())]);
 	await page.evaluate(() => BLPR.api.setSpeed(1));
+
+	// FPS limit: the replayer's render loop draws at most the chosen number of frames a second.
+	// Headless software rendering only manages a few frames a second, so test with 1 fps.
+	const perfNow = () => page.evaluate(() => ({renders: BLPR.performance.renders, skipped: BLPR.performance.skipped, at: performance.now()}));
+	await page.evaluate(() => BLPR.patchSettings({playback: {fpsLimit: 1}}));
+	await sleep(1500);
+	const fps0 = await perfNow();
+	await sleep(4000);
+	const fps1 = await perfNow();
+	const drawnLimited = fps1.renders - fps0.renders;
+	const limitedSeconds = (fps1.at - fps0.at) / 1000;
+	check('FPS limit draws at most the chosen frames per second', drawnLimited >= 1 && drawnLimited <= Math.ceil(limitedSeconds) + 1 && fps1.skipped > fps0.skipped, [fps0, fps1]);
+	check('Performance section shows the frames actually drawn', await page.evaluate(() => /^Drawing \d+ frames per second$/.test((document.getElementById('blp-r-fps-now') || {}).textContent || '')));
+	await page.evaluate(() => BLPR.patchSettings({playback: {fpsLimit: 0}}));
+	await sleep(800);
+	const fps2 = await perfNow();
+	await page.waitForFunction(r => BLPR.performance.renders > r + 2, fps2.renders, {timeout: 10000}).catch(() => null);
+	const fps3 = await perfNow();
+	check('with no limit every frame is drawn again', fps3.skipped === fps2.skipped && fps3.renders > fps2.renders, [fps2, fps3]);
 
 	// Right-click menu + export
 	await page.mouse.move(600, 300);
@@ -754,7 +807,7 @@ function watch(page, label) {
 	await opt.goto(`chrome-extension://${extId}/options.html#camera`);
 	await opt.waitForSelector('.section', {timeout: 10000});
 	const counts = await opt.evaluate(() => ({sections: document.querySelectorAll('.section').length, rows: document.querySelectorAll('.row').length}));
-	check('options renders all sections', counts.sections === 13 && counts.rows > 120, counts);
+	check('options renders all sections', counts.sections === 12 && counts.rows > 120, counts);
 	await opt.fill('#search', 'field of view');
 	await sleep(200);
 	const visible = await opt.evaluate(() => Array.from(document.querySelectorAll('.section')).filter(s => !s.classList.contains('hidden')).map(s => s.id));
@@ -784,23 +837,23 @@ function watch(page, label) {
 	watch(site, 'site');
 	await site.goto('https://beatleader.com/leaderboard/global/xyz789/1');
 	await site.waitForSelector('.blp-actions', {timeout: 10000});
-	const starsOff = await site.evaluate(() => ({
-		stars: document.querySelectorAll('.blp-star').length,
+	const dockClosed = await site.evaluate(() => ({
 		dock: Array.from(document.querySelectorAll('#blp-dock > *')).map(e => e.className),
 		dockText: document.getElementById('blp-dock').textContent,
 	}));
-	check('favorite stars next to links are off by default', starsOff.stars === 0, starsOff);
-	check('dock starts collapsed to the BL+ button', starsOff.dock.length === 1 && starsOff.dock[0] === 'blp-dock-brand' && starsOff.dockText === 'BL+', starsOff);
-	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {favoriteStars: true}}));
-	await site.waitForSelector('.player-score .blp-star', {timeout: 10000}).catch(() => null);
+	check('dock starts collapsed to the BL+ button', dockClosed.dock.length === 1 && dockClosed.dock[0] === 'blp-dock-brand' && dockClosed.dockText === 'BL+', dockClosed);
 	await site.click('#blp-dock .blp-dock-brand');
-	const dockOpen = await site.evaluate(() => ({open: document.getElementById('blp-dock').classList.contains('blp-dock-open'), items: document.querySelectorAll('#blp-dock > *').length}));
-	check('clicking BL+ opens the dock', dockOpen.open && dockOpen.items === 3, dockOpen);
+	const dockOpen = await site.evaluate(() => ({
+		open: document.getElementById('blp-dock').classList.contains('blp-dock-open'),
+		items: document.querySelectorAll('#blp-dock > *').length,
+		text: document.getElementById('blp-dock').textContent,
+	}));
+	check('clicking BL+ opens the dock (filters only on a leaderboard)', dockOpen.open && dockOpen.items === 2, dockOpen);
+	// Favorites were removed: BeatLeader's own follow button and playlists cover them.
+	check('no favorites: no stars, dock button or filter', (await site.evaluate(() => document.querySelectorAll('.blp-star').length)) === 0 && !/favorite/i.test(dockOpen.text), dockOpen.text);
 	const siteInfo = await site.evaluate(() => ({
 		actions: document.querySelectorAll('.blp-actions').length,
 		dl: document.querySelectorAll('.blp-dl').length,
-		stars: document.querySelectorAll('.blp-star').length,
-		navStars: document.querySelectorAll('nav .blp-star').length,
 		dock: !!document.getElementById('blp-dock'),
 		themed: !!document.getElementById('blp-theme-style'),
 		bg: getComputedStyle(document.body).backgroundColor,
@@ -818,7 +871,6 @@ function watch(page, label) {
 		return {ours, wrapped: !!main.querySelector('.blp-actions'), cells: main.querySelectorAll(':scope > span > *').length};
 	});
 	check('BL+ buttons fit the site icon grid as separate cells', !grid.wrapped && grid.ours.length === 2 && grid.ours.every(b => b.w === 22 && b.h === 22 && b.inside && b.hit), grid);
-	check('favorite stars on player & map links once enabled (not in nav)', siteInfo.stars >= 4 && siteInfo.navStars === 0, siteInfo);
 	check('dock shown on leaderboard', siteInfo.dock);
 	check('OLED theme applied to site', siteInfo.themed && siteInfo.bg === 'rgb(0, 0, 0)', siteInfo.bg);
 	check('rank #1 color re-mapped', siteInfo.rank1 === '#ffc400', siteInfo.rank1);
@@ -855,34 +907,6 @@ function watch(page, label) {
 	check('double-click puts the dock back along the bottom', !dockReset.vertical && dockReset.edge === 'bottom' && dockReset.bottom < 30 && dockReset.open === dockBefore.open, dockReset);
 	await opt.evaluate(() => window.BLP.storage.patchSettings({site: {dockSize: 100}}));
 	await sleep(400);
-	await site.click('.player-score .blp-star');
-	await sleep(600);
-	const favs = await sw.evaluate(() => chrome.storage.local.get('blp_favorites'));
-	const alice = favs.blp_favorites && favs.blp_favorites.players['111'];
-	check('favorite saved under the player ID with the API name', alice && alice.name === 'Alice Real' && alice.alias === 'alice-cool', favs.blp_favorites && favs.blp_favorites.players);
-	// The same player through her profile alias shows as already favorited.
-	check('alias links show the same favorite', await site.evaluate(() => document.querySelector('.other-players a[href="/u/alice-cool"] + .blp-star').classList.contains('blp-star-on')));
-	// Links to a player's score pages (/u/<id>/scores/1?…) get a star too.
-	await site.click('.other-players a[href^="/u/333/"] + .blp-star');
-	await sleep(600);
-	// The site reuses link elements when lists change: the star must follow the link, not the
-	// player who was there when it was added.
-	await site.evaluate(() => {
-		const a = document.querySelector('.player-score:nth-child(2) a[href="/u/222"]');
-		a.setAttribute('href', '/u/444');
-		a.textContent = 'Dave';
-	});
-	await sleep(400);
-	await site.click('.player-score:nth-child(2) a[href="/u/444"] + .blp-star');
-	await sleep(600);
-	const favs2 = (await sw.evaluate(() => chrome.storage.local.get('blp_favorites'))).blp_favorites.players;
-	check('score-page player links can be favorited', favs2['333'] && favs2['333'].name === 'Carol Real', Object.keys(favs2));
-	check('a reused link favorites the player it shows now', favs2['444'] && favs2['444'].name === 'Dave Real' && !favs2['222'], Object.keys(favs2));
-	await site.evaluate(() => {
-		const a = document.querySelector('.player-score:nth-child(2) a[href="/u/444"]');
-		a.setAttribute('href', '/u/222');
-		a.textContent = 'Bob';
-	});
 	await site.click('#blp-dock >> text=Full combo');
 	await sleep(300);
 	const hidden = await site.evaluate(() => document.querySelectorAll('.player-score.blp-filtered-out').length);
@@ -901,21 +925,15 @@ function watch(page, label) {
 	check('comparison highlights better value', !!winner, winner);
 	await site.keyboard.press('Escape');
 
-	// Profile page: follow + stats drawer + notifications
+	// Profile page: stats drawer. Following is BeatLeader's own: no BL+ Follow button.
 	await stubFetch();
 	await site.goto('https://beatleader.com/u/111');
 	await site.waitForSelector('#blp-dock', {timeout: 10000});
 	await site.click('#blp-dock .blp-dock-brand');
-	await site.click('#blp-dock >> text=Follow');
-	await sleep(800);
-	const fstate = await sw.evaluate(() => chrome.storage.local.get('blp_follow_state'));
-	const followed = fstate.blp_follow_state.players['111'];
-	check('follow stores player and primes last score', followed && followed.lastScoreId, followed);
-	check('follow uses the API player name', followed && followed.name === 'Alice Real', followed && followed.name);
-	const poll = await opt.evaluate(() => new Promise(r => chrome.runtime.sendMessage({type: 'checkFollowsNow'}, r)));
-	check('follow polling finds new score', poll && poll.ok && poll.data.found === 1, poll);
-	const badge = await sw.evaluate(() => chrome.action.getBadgeText({}));
-	check('toolbar badge shows new score count', badge === '1', badge);
+	const profileDock = await site.evaluate(() => Array.from(document.querySelectorAll('#blp-dock .blp-chip')).map(b => b.textContent));
+	check('profile dock has no Follow or favorite buttons', profileDock.length && !profileDock.some(x => /follow|favorite/i.test(x)), profileDock);
+	const perms = await sw.evaluate(() => chrome.runtime.getManifest().permissions);
+	check('no notification or alarm permissions any more', !perms.includes('notifications') && !perms.includes('alarms'), perms);
 	await site.click('#blp-dock >> text=BeatLeaderPlus stats');
 	await site.waitForSelector('#blp-stats-drawer .blp-tile', {timeout: 10000}).catch(() => null);
 	const tiles = await site.evaluate(() => document.querySelectorAll('#blp-stats-drawer .blp-tile').length);

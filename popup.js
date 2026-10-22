@@ -7,19 +7,17 @@
  *     BL+ tab of the replayer's Settings menu, camera mode / preset) – sent to the tab's content
  *     script, which forwards them to the replay page runtime
  *   - user-selected quick toggles (any boolean setting from lib/schema.js)
- *   - new scores from followed players and the favorites list
  */
 (function () {
 	'use strict';
 
-	const {utils: U, storage, defaults: D, i18n, schema} = window.BLP;
+	const {utils: U, storage, i18n, schema} = window.BLP;
 	const t = (k, v) => i18n.t(k, v);
 	const h = U.h;
 	const $ = id => document.getElementById(id);
 
 	let settings = null;
 	let activeTab = null;
-	let favTab = 'players';
 
 	/* ------------------------------------------------------------------ helpers */
 
@@ -27,16 +25,6 @@
 		$('status').textContent = text || '';
 		clearTimeout(status.timer);
 		if (text) status.timer = setTimeout(() => ($('status').textContent = ''), ms);
-	}
-
-	function send(type, payload) {
-		return new Promise((resolve, reject) => {
-			chrome.runtime.sendMessage(Object.assign({type}, payload || {}), res => {
-				if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-				if (!res || !res.ok) return reject(new Error((res && res.error) || 'Failed'));
-				resolve(res.data);
-			});
-		});
 	}
 
 	function sendToTab(msg) {
@@ -171,62 +159,6 @@
 		}
 	}
 
-	async function renderFollows() {
-		const section = $('followSection');
-		if (!settings.popup.showFollows || !settings.site.follow.enabled) return section.classList.add('hidden');
-		section.classList.remove('hidden');
-		const list = $('followList');
-		list.textContent = '';
-		let state;
-		try {
-			state = await send('getFollowState');
-		} catch (e) {
-			state = D.DEFAULT_FOLLOW_STATE;
-		}
-		const scores = (state.newScores || []).slice(0, 12);
-		if (!scores.length) {
-			list.appendChild(h('p', {class: 'empty'}, t('popup.noNewScores')));
-			return;
-		}
-		for (const s of scores) {
-			const url = U.replayUrl({scoreId: s.scoreId});
-			list.appendChild(
-				h(
-					'a',
-					{class: 'item', href: url, target: '_blank', title: s.song + (s.difficulty ? ' (' + s.difficulty + ')' : '')},
-					h('img', {src: s.cover || s.avatar || 'icons/icon48.png', alt: ''}),
-					h('div', {class: 'meta'}, h('span', null, s.playerName), h('span', {class: 'muted'}, s.song + (s.difficulty ? ' · ' + s.difficulty : ''))),
-					h('span', {class: 'value'}, s.accuracy != null ? (s.accuracy * 100).toFixed(2) + '%' : '', s.pp ? h('div', {class: 'muted'}, s.pp.toFixed(1) + 'pp') : null)
-				)
-			);
-		}
-	}
-
-	async function renderFavorites() {
-		const section = $('favSection');
-		if (!settings.popup.showFavorites || !settings.site.favorites) return section.classList.add('hidden');
-		section.classList.remove('hidden');
-		const fav = await storage.getLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES);
-		const list = $('favList');
-		list.textContent = '';
-		const entries = Object.values(favTab === 'players' ? fav.players || {} : fav.maps || {}).sort((a, b) => (b.added || 0) - (a.added || 0));
-		if (!entries.length) {
-			list.appendChild(h('p', {class: 'empty'}, t('popup.noFavorites')));
-			return;
-		}
-		for (const f of entries.slice(0, 30)) {
-			const url = favTab === 'players' ? 'https://beatleader.com/u/' + encodeURIComponent(f.id) : 'https://beatleader.com' + (f.url || '/leaderboard/global/' + encodeURIComponent(f.id));
-			list.appendChild(
-				h(
-					'a',
-					{class: 'item', href: url, target: '_blank', title: f.note || f.name},
-					favTab === 'players' ? h('img', {src: f.avatar || 'icons/icon48.png', alt: ''}) : null,
-					h('div', {class: 'meta'}, h('span', null, f.name), f.note ? h('span', {class: 'muted'}, f.note) : null)
-				)
-			);
-		}
-	}
-
 	/* ------------------------------------------------------------------ init */
 
 	async function init() {
@@ -249,31 +181,7 @@
 			chrome.runtime.openOptionsPage();
 			window.close();
 		});
-		$('clearNew').addEventListener('click', async () => {
-			await send('clearNewScores').catch(() => {});
-			renderFollows();
-		});
-		$('checkNow').addEventListener('click', async () => {
-			status(t('common.loading'), 20000);
-			try {
-				const res = await send('checkFollowsNow');
-				status(res.found ? '+' + res.found : t('popup.noNewScores'));
-			} catch (e) {
-				status(e.message);
-			}
-			renderFollows();
-		});
-		document.querySelectorAll('#favSection .tab').forEach(btn =>
-			btn.addEventListener('click', () => {
-				favTab = btn.dataset.tab;
-				document.querySelectorAll('#favSection .tab').forEach(b => b.classList.toggle('active', b === btn));
-				renderFavorites();
-			})
-		);
-
 		renderToggles();
-		renderFollows();
-		renderFavorites();
 
 		[activeTab] = await chrome.tabs.query({active: true, currentWindow: true});
 		let pageInfo = null;
