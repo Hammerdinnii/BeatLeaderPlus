@@ -2,14 +2,15 @@
  * BeatLeaderPlus – website enhancements (content script, isolated world).
  *
  * Features (each individually switchable in options → Website enhancements):
- *   - "Download .bsor" and "Open in Enhanced Replayer" buttons next to every replay link
- *   - favorite stars on player and map links (stored locally with notes)
+ *   - "Download .bsor" and compare buttons next to every replay link
  *   - score comparison (select two scores → side-by-side modal)
  *   - auto-expand score details
- *   - quick filters (my scores, clan, high accuracy, favorites, full combo)
+ *   - quick filters (my scores, clan, high accuracy, full combo)
  *   - optional extra badges (misses / bad cuts / pauses / max combo) fetched from the API
- *   - a floating "dock" with page-specific actions (favorite/follow a player or map, filters,
- *     comparison tray, profile statistics)
+ *   - a floating "dock" with page-specific actions (filters, comparison tray, profile statistics)
+ *
+ * Following and favoriting players and maps are BeatLeader's own: its follow button and
+ * "Add to playlist".
  *
  * The BeatLeader website is a Svelte SPA. To stay robust against its re-renders we never move
  * or remove site nodes: we only add small sibling elements (marked with [data-blp-ui]) and use a
@@ -48,8 +49,6 @@
 	const state = {
 		started: false,
 		observer: null,
-		favorites: U.deepClone(D.DEFAULT_FAVORITES),
-		followed: {},
 		compare: [],
 		filter: 'all',
 		dockOpen: false,
@@ -86,7 +85,7 @@
 		setTimeout(() => el.remove(), 3300);
 	}
 
-	/** icon: Font Awesome classes (the site loads Font Awesome) or plain text such as a star. */
+	/** icon: Font Awesome classes (the site loads Font Awesome) or plain text such as ✕. */
 	function iconButton(icon, title, onClick, extraClass = '') {
 		return h(
 			'button',
@@ -118,102 +117,7 @@
 		return {type: path === '/' ? 'home' : 'other'};
 	}
 
-	function isInChrome(el) {
-		return !!el.closest('nav, header, footer, [data-blp-ui], .pagination');
-	}
-
 	/* ------------------------------------------------------------------ data */
-
-	async function loadFavorites() {
-		state.favorites = U.withDefaults(await storage.getLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES), D.DEFAULT_FAVORITES);
-	}
-
-	async function loadFollowed() {
-		const st = await storage.getLocal(D.KEYS.follow, D.DEFAULT_FOLLOW_STATE);
-		state.followed = st.players || {};
-	}
-
-	async function saveFavorites() {
-		await storage.setLocal(D.KEYS.favorites, state.favorites);
-	}
-
-	/**
-	 * Profile links use a player's ID or their custom alias (/u/<id> or /u/<alias>), so a
-	 * favorite player is found by either; favorites are stored under the real ID.
-	 */
-	function favoritePlayer(key) {
-		const players = state.favorites.players;
-		const k = String(key);
-		if (players[k]) return players[k];
-		const lower = k.toLowerCase();
-		return Object.values(players).find(p => p.alias && String(p.alias).toLowerCase() === lower) || null;
-	}
-
-	function isFavorite(kind, id) {
-		if (kind === 'player') return !!favoritePlayer(id);
-		return !!state.favorites.maps[String(id)];
-	}
-
-	/** Favorite or unfavorite a player given the ID or alias from a profile link. */
-	async function togglePlayerFavorite(key, fallbackName, button) {
-		if (!key) return;
-		await loadFavorites();
-		const players = state.favorites.players;
-		const existing = favoritePlayer(key);
-		if (existing) {
-			delete players[existing.id || key];
-			delete players[key];
-			toast(t('site.favRemoved'));
-		} else {
-			if (button) button.classList.add('blp-busy');
-			let info;
-			try {
-				info = await BLP.send('resolvePlayer', {player: key});
-			} catch (e) {
-				// Without the API, only a numeric player ID can be trusted as is.
-				if (!/^\d+$/.test(key)) {
-					toast(t('site.playerLookupFailed'), 'error');
-					return;
-				}
-				info = {id: key, name: fallbackName || key, avatar: '', alias: ''};
-			} finally {
-				if (button) button.classList.remove('blp-busy');
-			}
-			const name = info.name || fallbackName || info.id;
-			players[info.id] = {id: info.id, name, avatar: info.avatar || '', alias: info.alias || '', note: (players[info.id] && players[info.id].note) || '', added: Date.now()};
-			toast(t('site.favPlayerAdded', {name}), 'success');
-		}
-		await saveFavorites();
-		refreshStars();
-		renderDock();
-	}
-
-	async function toggleFavorite(kind, id, name, extra = {}) {
-		await loadFavorites();
-		const bucket = kind === 'player' ? state.favorites.players : state.favorites.maps;
-		id = String(id);
-		if (bucket[id]) {
-			delete bucket[id];
-			toast(t('site.favRemoved'));
-		} else {
-			bucket[id] = Object.assign({id, name: name || id, note: '', added: Date.now()}, extra);
-			toast(t(kind === 'player' ? 'site.favPlayerAdded' : 'site.favMapAdded', {name: name || id}), 'success');
-		}
-		await saveFavorites();
-		refreshStars();
-		renderDock();
-	}
-
-	async function editFavoriteNote(kind, id) {
-		await loadFavorites();
-		const fav = kind === 'player' ? favoritePlayer(id) : state.favorites.maps[String(id)];
-		if (!fav) return;
-		const note = window.prompt(t('site.favNotePrompt', {name: fav.name}), fav.note || '');
-		if (note === null) return;
-		fav.note = note.trim();
-		await saveFavorites();
-		renderDock();
-	}
 
 	/** Fetch a score from the API (through the background worker, cached). */
 	function getScore(scoreId) {
@@ -286,73 +190,6 @@
 		refreshCompareButtons();
 	}
 
-	/* ------------------------------------------------------------------ favorites (stars) */
-
-	const playerKey = href => {
-		const m = /^\/u\/([^/?#]+)/.exec(new URL(href, location.href).pathname);
-		return m ? decodeURIComponent(m[1]) : null;
-	};
-	const mapKey = href => {
-		const m = /^\/leaderboard\/[^/]+\/([^/?#]+)/.exec(new URL(href, location.href).pathname);
-		return m ? decodeURIComponent(m[1]) : null;
-	};
-	const linkText = a => (a.textContent || '').trim().replace(/\s+/g, ' ');
-
-	/**
-	 * A star next to a player or map link. It reads the link when clicked rather than when it is
-	 * added: the site reuses link elements for other players and maps when the list changes.
-	 */
-	function starButton(kind, link) {
-		const key = () => (kind === 'player' ? playerKey(link.href) : mapKey(link.href));
-		const b = iconButton(
-			'☆',
-			t('site.favorite'),
-			() => {
-				if (kind === 'player') return togglePlayerFavorite(key(), linkText(link), b);
-				return toggleFavorite('map', key(), linkText(link), {url: new URL(link.href, location.href).pathname});
-			},
-			'blp-star'
-		);
-		b.dataset.kind = kind;
-		b.__blpKey = key;
-		updateStar(b);
-		return b;
-	}
-
-	function updateStar(b) {
-		if (b.__blpKey) b.dataset.favId = b.__blpKey() || '';
-		const on = isFavorite(b.dataset.kind, b.dataset.favId);
-		b.textContent = on ? '★' : '☆';
-		b.classList.toggle('blp-star-on', on);
-		b.title = on ? t('site.unfavorite') : t('site.favorite');
-	}
-
-	function refreshStars() {
-		document.querySelectorAll('.blp-star').forEach(updateStar);
-	}
-
-	function processFavoriteLinks() {
-		// Profile links: /u/<id or alias>, also with a page or tab after it (/u/<id>/scores/1).
-		// Links with no text (avatars) or a lot of it (whole cards) get no star.
-		document.querySelectorAll('a[href*="/u/"]').forEach(a => {
-			if (a.dataset.blpFav) return;
-			a.dataset.blpFav = '1';
-			if (isInChrome(a) || !U.SITE_HOST_RE.test(a.hostname)) return;
-			const text = linkText(a);
-			if (!playerKey(a.href) || !text || text.length > 64) return;
-			a.insertAdjacentElement('afterend', starButton('player', a));
-		});
-		document.querySelectorAll('a[href*="/leaderboard/"]').forEach(a => {
-			if (a.dataset.blpFav) return;
-			a.dataset.blpFav = '1';
-			if (isInChrome(a) || !U.SITE_HOST_RE.test(a.hostname)) return;
-			const text = linkText(a);
-			if (!mapKey(a.href) || !text || text.length > 120) return;
-			a.insertAdjacentElement('afterend', starButton('map', a));
-		});
-		refreshStars();
-	}
-
 	/* ------------------------------------------------------------------ auto expand */
 
 	function autoExpand() {
@@ -403,17 +240,6 @@
 			case 'highAcc': {
 				const acc = rowAccuracy(row);
 				return acc !== null && acc >= Number(s.highAccThreshold);
-			}
-			case 'favorites': {
-				const players = Array.from(row.querySelectorAll('a[href*="/u/"]')).some(a => {
-					const key = playerKey(a.href);
-					return key && isFavorite('player', key);
-				});
-				const maps = Array.from(row.querySelectorAll('a[href*="/leaderboard/"]')).some(a => {
-					const key = mapKey(a.href);
-					return key && isFavorite('map', key);
-				});
-				return players || maps || (info.type === 'leaderboard' && isFavorite('map', info.leaderboardId));
 			}
 			case 'fc':
 				return /\bFC\b/.test(row.textContent || '');
@@ -775,51 +601,9 @@
 		if (info.type === 'profile') {
 			const id = info.playerId;
 			const name = profileNameGuess() || id;
-			if (s.favorites) {
-				const fav = favoritePlayer(id);
-				items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: e => togglePlayerFavorite(id, name, e.currentTarget)}, t(fav ? 'site.unfavorite' : 'site.favorite')));
-				if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', title: fav.note || '', onclick: () => editFavoriteNote('player', id)}, fav.note ? fav.note.slice(0, 24) : t('common.notes')));
-			}
-			if (s.follow.enabled) {
-				const lower = String(id).toLowerCase();
-				const following = !!state.followed[id] || Object.values(state.followed).some(p => p.alias && String(p.alias).toLowerCase() === lower);
-				items.push(
-					h(
-						'button',
-						{
-							class: 'blp-chip' + (following ? ' blp-active' : ''),
-							type: 'button',
-							onclick: async () => {
-								try {
-									if (following) {
-										await BLP.send('unfollow', {playerId: id});
-										toast(t('site.unfollowed', {name}));
-									} else {
-										await BLP.send('follow', {playerId: id, name});
-										toast(t('site.followed', {name}), 'success');
-									}
-									await loadFollowed();
-									renderDock();
-								} catch (e) {
-									toast(e.message, 'error');
-								}
-							},
-						},
-						t(following ? 'site.unfollow' : 'site.follow')
-					)
-				);
-			}
 			if (s.profileStats && BLP.profileStats) {
 				items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => BLP.profileStats.open(id, name)}, t('site.profileStats')));
 			}
-		}
-
-		if (info.type === 'leaderboard' && s.favorites) {
-			const id = info.leaderboardId;
-			const name = (document.title || '').split('|')[0].trim() || id;
-			const fav = isFavorite('map', id);
-			items.push(h('button', {class: 'blp-chip' + (fav ? ' blp-active' : ''), type: 'button', onclick: () => toggleFavorite('map', id, name, {url: location.pathname})}, t(fav ? 'site.unfavorite' : 'site.favorite')));
-			if (fav) items.push(h('button', {class: 'blp-chip', type: 'button', onclick: () => editFavoriteNote('map', id)}, state.favorites.maps[id].note ? state.favorites.maps[id].note.slice(0, 24) : t('common.notes')));
 		}
 
 		if (s.quickFilters && rows().length) {
@@ -832,7 +616,6 @@
 					chip('mine', t('site.filterMine')),
 					chip('clan', t('site.filterClan')),
 					chip('highAcc', t('site.filterHighAcc', {acc: s.highAccThreshold})),
-					s.favorites ? chip('favorites', t('site.filterFavorites')) : null,
 					chip('fc', t('site.filterFc'))
 				)
 			);
@@ -920,10 +703,7 @@
 		document.querySelectorAll('[data-blp-ui]').forEach(el => {
 			if (el.id !== 'blp-toasts') el.remove();
 		});
-		document.querySelectorAll('[data-blp-done],[data-blp-fav],[data-blp-expanded]').forEach(el => {
-			delete el.dataset.blpDone;
-			delete el.dataset.blpFav;
-		});
+		document.querySelectorAll('[data-blp-done]').forEach(el => delete el.dataset.blpDone);
 		document.querySelectorAll('.blp-filtered-out').forEach(el => el.classList.remove('blp-filtered-out'));
 		if (state.badgeObserver) {
 			state.badgeObserver.disconnect();
@@ -944,10 +724,7 @@
 			if (BLP.profileStats) BLP.profileStats.close();
 		}
 		const s = settings().site;
-		if (!state.hidden) {
-			processReplayLinks();
-			if (s.favorites && s.favoriteStars) processFavoriteLinks();
-		}
+		if (!state.hidden) processReplayLinks();
 		if (s.autoExpandDetails) autoExpand();
 		applyFilters();
 		renderDock();
@@ -959,22 +736,13 @@
 		async start() {
 			if (state.started) return;
 			state.started = true;
-			await Promise.all([loadFavorites(), loadFollowed(), storage.getLocal(D.KEYS.siteUi, {}).then(ui => (state.dockPos = cleanDockPos(ui && ui.dock)))]);
+			state.dockPos = cleanDockPos(((await storage.getLocal(D.KEYS.siteUi, {})) || {}).dock);
 			// Moved in another tab: follow it here too.
 			storage.onLocalChanged(D.KEYS.siteUi, ui => {
 				state.dockPos = cleanDockPos(ui && ui.dock);
 				layoutDock(document.getElementById('blp-dock'));
 			});
 			window.addEventListener('resize', U.debounce(() => layoutDock(document.getElementById('blp-dock')), 100));
-			storage.onLocalChanged(D.KEYS.favorites, async () => {
-				await loadFavorites();
-				refreshStars();
-				renderDock();
-			});
-			storage.onLocalChanged(D.KEYS.follow, async () => {
-				await loadFollowed();
-				renderDock();
-			});
 			state.observer = new MutationObserver(mutations => {
 				// Ignore mutations caused only by our own UI.
 				for (const m of mutations) {

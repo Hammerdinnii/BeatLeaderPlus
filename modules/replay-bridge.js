@@ -40,6 +40,7 @@
 		'injected/hud.js',
 		'injected/audio.js',
 		'injected/export.js',
+		'injected/performance.js',
 		'injected-replay.js',
 	];
 	const PAGE_PATCHABLE_SECTIONS = ['camera', 'playback', 'overlay', 'visuals', 'audio', 'export'];
