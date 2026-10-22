@@ -7,8 +7,8 @@
  * Scope: "Global" edits the global settings; selecting a domain edits that domain's override
  * set (only the differences to the global settings are stored – see lib/storage.js).
  *
- * Custom renderers (camera presets, paths, bookmarks, hitsounds, saber models, favorites,
- * follows, popup toggles, backup tools, previews) are defined in RENDERERS below.
+ * Custom renderers (camera presets, paths, bookmarks, hitsounds, saber models, popup toggles,
+ * backup tools, previews) are defined in RENDERERS below.
  */
 (function () {
 	'use strict';
@@ -19,7 +19,7 @@
 	const $ = id => document.getElementById(id);
 
 	const DOMAINS = ['beatleader.com', 'replay.beatleader.com', 'beatleader.xyz', 'replay.beatleader.xyz', 'beatleader.net', 'replay.beatleader.net'];
-	const GLOBAL_ONLY_SECTIONS = ['general', 'library', 'popup', 'data'];
+	const GLOBAL_ONLY_SECTIONS = ['general', 'popup', 'data'];
 	const AUDIO_EXT = /\.(mp3|ogg|oga|wav|m4a|aac|flac|webm)$/i;
 	const MODEL_EXT = /\.(glb|gltf|obj|saber)$/i;
 	const MAX_SOUND_BYTES = 2 * 1024 * 1024;
@@ -1038,130 +1038,6 @@
 			);
 		},
 
-		async favorites(box) {
-			const fav = U.withDefaults(await storage.getLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES), D.DEFAULT_FAVORITES);
-			for (const kind of ['players', 'maps']) {
-				box.appendChild(h('h3', null, t(kind === 'players' ? 'opt.favPlayers' : 'opt.favMaps')));
-				const list = h('div', {class: 'list'});
-				const entries = Object.values(fav[kind]).sort((a, b) => (b.added || 0) - (a.added || 0));
-				if (!entries.length) list.appendChild(h('p', {class: 'muted'}, t('opt.favEmpty')));
-				for (const f of entries) {
-					const url = kind === 'players' ? 'https://beatleader.com/u/' + encodeURIComponent(f.id) : 'https://beatleader.com' + (f.url || '/leaderboard/global/' + encodeURIComponent(f.id));
-					const note = h('input', {type: 'text', value: f.note || '', placeholder: t('common.notes')});
-					note.addEventListener('change', () =>
-						storage.updateLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES, m => {
-							if (m[kind][f.id]) m[kind][f.id].note = note.value.trim();
-							return m;
-						})
-					);
-					list.appendChild(
-						h(
-							'div',
-							{class: 'list-item'},
-							kind === 'players' && f.avatar ? h('img', {src: f.avatar, alt: ''}) : null,
-							h('a', {class: 'grow', href: url, target: '_blank', rel: 'noopener'}, f.name),
-							note,
-							h(
-								'button',
-								{
-									class: 'btn small danger',
-									type: 'button',
-									onclick: () =>
-										storage.updateLocal(D.KEYS.favorites, D.DEFAULT_FAVORITES, m => {
-											delete m[kind][f.id];
-											return m;
-										}),
-								},
-								'✕'
-							)
-						)
-					);
-				}
-				box.appendChild(list);
-			}
-		},
-
-		async followed(box) {
-			const st = await storage.getLocal(D.KEYS.follow, D.DEFAULT_FOLLOW_STATE);
-			const send = (type, payload) =>
-				new Promise((resolve, reject) =>
-					chrome.runtime.sendMessage(Object.assign({type}, payload || {}), r => (chrome.runtime.lastError || !r || !r.ok ? reject(new Error((r && r.error) || 'failed')) : resolve(r.data)))
-				);
-			box.appendChild(h('h3', null, t('opt.followed')));
-			box.appendChild(h('p', {class: 'muted'}, t('opt.followLast', {time: st.lastCheck ? new Date(st.lastCheck).toLocaleString() : '—'})));
-			const list = h('div', {class: 'list'});
-			const players = Object.values(st.players || {});
-			if (!players.length) list.appendChild(h('p', {class: 'muted'}, t('opt.followedEmpty')));
-			for (const p of players) {
-				list.appendChild(
-					h(
-						'div',
-						{class: 'list-item'},
-						p.avatar ? h('img', {src: p.avatar, alt: ''}) : null,
-						h('a', {class: 'grow', href: 'https://beatleader.com/u/' + encodeURIComponent(p.id), target: '_blank', rel: 'noopener'}, p.name || p.id),
-						h('span', {class: 'muted'}, p.id),
-						h('button', {class: 'btn small danger', type: 'button', onclick: () => send('unfollow', {playerId: p.id}).catch(e => alert(e.message))}, t('site.unfollow'))
-					)
-				);
-			}
-			box.appendChild(list);
-			const input = h('input', {type: 'text', class: 'input', placeholder: '76561198…', style: {maxWidth: '260px'}});
-			box.appendChild(
-				h(
-					'div',
-					{class: 'actions-row'},
-					input,
-					h(
-						'button',
-						{
-							class: 'btn',
-							type: 'button',
-							onclick: async () => {
-								const id = input.value.trim();
-								if (!id) return;
-								try {
-									await send('follow', {playerId: id});
-									input.value = '';
-								} catch (e) {
-									alert(e.message);
-								}
-							},
-						},
-						t('opt.followAdd')
-					),
-					h(
-						'button',
-						{
-							class: 'btn',
-							type: 'button',
-							onclick: async e => {
-								e.target.disabled = true;
-								await send('checkFollowsNow').catch(err => alert(err.message));
-								e.target.disabled = false;
-							},
-						},
-						t('opt.followCheck')
-					)
-				)
-			);
-			const recent = (st.newScores || []).slice(0, 10);
-			if (recent.length) {
-				box.appendChild(h('h3', null, t('popup.follows')));
-				const rl = h('div', {class: 'list'});
-				for (const s of recent) {
-					rl.appendChild(
-						h(
-							'a',
-							{class: 'list-item', href: U.replayUrl({scoreId: s.scoreId}), target: '_blank', rel: 'noopener'},
-							h('span', {class: 'grow'}, s.playerName + ' · ' + s.song + (s.difficulty ? ' (' + s.difficulty + ')' : '')),
-							h('span', {class: 'muted'}, s.accuracy != null ? (s.accuracy * 100).toFixed(2) + '%' : '')
-						)
-					);
-				}
-				box.appendChild(rl);
-			}
-		},
-
 		popupToggles(box) {
 			box.appendChild(h('h3', null, t('opt.popupToggles')));
 			const selected = new Set(get('popup.quickToggles') || []);
@@ -1355,8 +1231,6 @@
 		}, 300);
 		storage.onLocalChanged(D.KEYS.cameraPaths, () => rerenderCustom('cameraPaths'));
 		storage.onLocalChanged(D.KEYS.bookmarks, () => rerenderCustom('bookmarks'));
-		storage.onLocalChanged(D.KEYS.favorites, () => rerenderCustom('favorites'));
-		storage.onLocalChanged(D.KEYS.follow, () => rerenderCustom('followed'));
 		storage.onLocalChanged(D.KEYS.saberModels, () => rerenderCustom('saberModels'));
 		storage.onLocalChanged(D.KEYS.hitsoundPack, () => {
 			rerenderCustom('hitsoundPack');

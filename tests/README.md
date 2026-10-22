@@ -6,7 +6,7 @@
 - a **small leaderboard page** (`site.html`) served at `https://beatleader.com/` for the website features
 - the **popup** and **options** pages
 
-The replayer needs a replay and a map. `fixtures.js` takes the test map that ships with the replayer's repository (`assets/test.zip`) and generates a `.bsor` replay for it, using the field layout of the replayer's own decoder (`src/open-replay-decoder.js`). It also answers the few API requests the replayer makes for that score. Every request is answered locally through Playwright routing, so no network access is needed. Requests made by the extension's service worker can't be routed, so the test stubs `fetch` inside the worker for the API-dependent checks (PP estimate, comparison, follows, profile stats).
+The replayer needs a replay and a map. `fixtures.js` takes the test map that ships with the replayer's repository (`assets/test.zip`) and generates a `.bsor` replay for it, using the field layout of the replayer's own decoder (`src/open-replay-decoder.js`). It also answers the few API requests the replayer makes for that score. Every request is answered locally through Playwright routing, so no network access is needed. Requests made by the extension's service worker can't be routed, so the test stubs `fetch` inside the worker for the API-dependent checks (PP estimate, comparison, profile stats).
 
 ## .saber reader unit tests
 
