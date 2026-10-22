@@ -4,7 +4,7 @@ A Manifest V3 Chrome extension that adds a customizable enhancement layer to [Be
 
 In the replay viewer, BeatLeaderPlus **extends the replayer's own interface** instead of adding a second one. There is no floating panel or extra HUD. New options appear as a **BL+ tab** in the replayer's Settings menu, as an extra block and a **BL+ tab** in its Camera menu, and as extra entries in its right-click menu. Features build on what the replayer already does (its free camera, saber colors, "slow down on mistakes", hitsound volume and score HUD) rather than duplicating it.
 
-The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes and speed buttons; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, favorites, follows, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
+The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes, speed buttons and an FPS limit; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
 
 > BeatLeaderPlus is an unofficial, fan-made extension. It is not affiliated with or endorsed by BeatLeader. The popup and the options page say so too.
 
@@ -45,7 +45,7 @@ Requires Chrome 111 or newer (or another Chromium-based browser).
 
 | Replayer menu | What BeatLeaderPlus adds |
 | --- | --- |
-| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Extra hitsounds, Export, Score HUD and Interface sections |
+| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Performance (FPS limit), Extra hitsounds, Export, Score HUD and Interface sections |
 | **Camera → Main** tab | A BeatLeaderPlus block under the official left/center/right buttons: Orbit, Smooth follow, First person, a preset picker, "save as preset" and the camera path picker |
 | **Camera → BL+** tab | First person and orthographic views first (the replayer's own settings, mirrored, plus BL+ additions), then free camera tuning, orbit/follow options, the preset list and camera path tools |
 | **Right-click menu** | "Copy URL with BL+ camera and colors", "Screenshot" and "Record clip", next to the official "Copy URL" entries |
@@ -86,9 +86,10 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 - **Reverse playback** (`Z`), with a configurable scrub rate and speed.
 - **A-B section loop** (`T` sets A, then B, then clears it; `Shift+T` clears), with optional pre-roll.
 - **Bookmarks with notes** (`B` to add, `Shift+B` to jump to the next one). They're saved per replay, shown on the timeline and listed in Settings → BL+ and on the options page.
-- **Low-accuracy cuts in the official slow motion**: cuts below a score threshold get the same slow-down windows as misses and bad cuts. Turning this on also turns on the replayer's own "change speed around mistakes" (whose speed and offsets are used); turning that off in the replayer turns this off too.
+- **Low-accuracy cuts in the official slow motion**: cuts below a score threshold get the same slow-down windows as misses and bad cuts. This switch and the replayer's own "change speed around mistakes" (whose speed and offsets are used) work as one: turning either one on or off turns both on or off.
 - **Pause at mistakes**: stops playback at each miss, bad cut, bomb hit or wall hit (each can be switched on or off).
 - **Speed buttons** in Settings → BL+ → Playback for quick speed changes (default 0.5×, 0.75×, 1×, 1.25×; the list is configurable).
+- **FPS limit** in Settings → BL+ → Performance (30 to 240 fps, or no limit): how many frames per second the replay viewer draws. A lower limit saves power and keeps laptops cooler. Only drawing is limited, so the replay, hitsounds and slow motion keep their timing. The section shows how many frames are actually drawn.
 - **Remember speed and jump distance** across sessions (whatever you set with the replayer's own controls).
 - **Bookmark flags and the loop region on the timeline**, alongside the replayer's own accuracy graph and markers.
 
@@ -117,12 +118,11 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 ### Website enhancements
 
 - **Download .bsor** and **compare** buttons next to every replay link. In BeatLeader's score icon grid they appear as extra icons in the same style, and the download icon is left out when the site already shows its own. Replay links also get a "Download replay (.bsor)" right-click entry. (There is no separate "enhanced replayer": every replay link opens the official replayer, which BeatLeaderPlus extends.)
-- **Favorite players and maps**, with notes, listed in the popup and the options page. Add them from the BL+ dock on a profile or leaderboard page. Optional stars next to every player and map link (off by default) favorite with one click. Players are looked up on BeatLeader when you favorite them and saved under their player ID with their current name, so profile aliases (`/u/<alias>`) and links the site reuses while you browse always favorite the right person.
-- **Followed players**: background polling for new scores, a toolbar badge counter and optional desktop notifications.
 - **Score comparison**: pick two scores (scales icon) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.
 - **Auto-expand score details**.
-- **Quick filters**: my scores, clan, high accuracy (threshold is configurable), favorites and full combo.
-- The **BL+ dock** on profile and leaderboard pages holds favorite, follow, statistics, filter and comparison controls. It stays collapsed to a **BL+** button until you click it; a dot on the button means a filter or comparison is active. **Drag the button** to any edge of the window: along the left and right edges the dock runs vertically, along the top and bottom horizontally, and the button stays where you put it when the dock opens. Double-click it to put it back at the bottom. Its size is a setting (Website enhancements → BL+ dock), and its position is remembered per browser.
+- Following players and favoriting maps are left to BeatLeader itself: its own follow button (with a Followed filter and a feed of their scores) and "Add to playlist".
+- **Quick filters**: my scores, clan, high accuracy (threshold is configurable) and full combo.
+- The **BL+ dock** on profile and leaderboard pages holds statistics, filter and comparison controls. It stays collapsed to a **BL+** button until you click it; a dot on the button means a filter or comparison is active. **Drag the button** to any edge of the window: along the left and right edges the dock runs vertically, along the top and bottom horizontally, and the button stays where you put it when the dock opens. Double-click it to put it back at the bottom. Its size is a setting (Website enhancements → BL+ dock), and its position is remembered per browser.
 - **Profile statistics drawer**: average and median accuracy, FC rate, average stars, an accuracy distribution, personal bests over time and a recent accuracy trend.
 - Optional **extra badges** on scores (misses, bad cuts, pauses, max combo), fetched lazily and cached.
 
@@ -186,14 +186,13 @@ Shared links also set the replayer's own `time`, `speed`, `jd`, `cpx/cpy/cpz/crx
 ```
 manifest.json            MV3 manifest (content scripts, web-accessible resources, permissions)
 background.js            service worker: migration, messaging, API fetches, downloads,
-                         follow polling (alarms), badge, notifications, context menu,
-                         MAIN-world injection fallback
+                         context menu, MAIN-world injection fallback
 content-early.js         document_start: loads settings, applies the site theme before first paint
 content.js               document_idle: detects the page type and starts the right modules
 modules/
   theme.js               theme engine (CSS variables, typography, density, hide rules, custom CSS)
   hotkeys.js             global shortcuts (isolated world)
-  site-enhancements.js   buttons, favorites, filters, comparison, dock
+  site-enhancements.js   buttons, filters, comparison, dock
   site-profile-stats.js  profile statistics drawer (canvas charts)
   replay-bridge.js       injects the replay runtime and relays messages + storage
 injected-replay.js       page-world bootstrap
@@ -207,6 +206,7 @@ injected/
   hud.js                 PP estimate and last-cut lines in the replayer's score HUD
   audio.js               extra hitsounds: synthesis, pack decoding, look-ahead scheduling
   export.js              share links, screenshots, clip recording
+  performance.js         FPS limit (wraps the scene's render loop)
 lib/
   i18n.js                all user-facing strings (en + partial de)
   defaults.js            default settings, theme and camera presets, storage keys
@@ -251,7 +251,6 @@ The page runtime has no `chrome.*` access, so it uses `window.postMessage` to ta
 | `blp_bookmarks` | local | bookmarks per replay |
 | `blp_camera_paths` | local | recorded camera paths |
 | `blp_hitsound_pack`, `blp_saber_models` | local | imported audio and models (base64) |
-| `blp_favorites`, `blp_follow_state` | local | favorites, followed players, unseen new scores |
 | `blp_site_ui` | local | where the BL+ dock was dragged to on the website |
 
 ---
@@ -278,5 +277,5 @@ There is no build step: edit the files and reload the extension.
 
 ### Privacy
 
-BeatLeaderPlus only talks to the BeatLeader API, through the background worker and only for the features you use (score details, follows, statistics). All data stays in your browser's extension storage and is never sent anywhere else.
+BeatLeaderPlus only talks to the BeatLeader API, through the background worker and only for the features you use (score details and statistics). All data stays in your browser's extension storage and is never sent anywhere else.
 
