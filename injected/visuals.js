@@ -8,6 +8,8 @@
  *   - note colors independent of saber colors (beat-generator colors), chain and arc colors
  *   - trail color, thickness (vertex shader patch) and brightness on top of the official trail
  *   - saber glow intensity and styles: neon, particle, custom GLTF/GLB/OBJ model
+ *   - bloom on the glowing parts of custom models: each gets a copy on GLOW_LAYER that only
+ *     bloom.js draws (into its bloom pass), never the replayer's cameras
  *   - miss / bad-cut / bomb flashes, 3D mistake markers, hit particles
  *   - show / hide sabers, trails, notes, bombs, walls, arcs and chains (THREE layers, so the
  *     replayer's own visibility logic and object pools are never touched)
@@ -39,6 +41,7 @@
 		dropTarget: 'both',
 		dropBusy: false,
 		dropError: '',
+		notesOpen: false,
 		storedModels: null,
 		hiddenKeys: new Set(),
 		beatsHidden: false,
@@ -211,7 +214,7 @@
 		if (!url) return '';
 		const m = s.customModel;
 		const colored = m.tint || modelFormat(url) !== 'gltf';
-		return [url, m.autoFit ? 1 : 0, m.unlit ? 1 : 0, m.tint ? 1 : 0, colored ? saberColor(hand) : ''].join('|');
+		return [url, m.autoFit ? 1 : 0, m.unlit ? 1 : 0, m.tint ? 1 : 0, colored ? saberColor(hand) : '', bloomSource(s)].join('|');
 	}
 
 	const refreshModelUi = () => R.ui && R.ui.refresh();
@@ -227,7 +230,7 @@
 				// A-Frame entities override remove(), so detach through the parent.
 				if (slot.el && slot.el.parentNode) slot.el.parentNode.removeChild(slot.el);
 				if (slot.objUrl) URL.revokeObjectURL(slot.objUrl);
-				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: '', info: null});
+				Object.assign(slot, {key, url: key.split('|')[0], el: null, objUrl: null, loaded: false, state: key ? 'loading' : '', error: '', info: null, glow: 0});
 				setDefaultSaberVisible(el, true);
 				if (key) loadModel(hand, el, slot, key).catch(e => modelFailed(slot, key, e));
 				refreshModelUi();
@@ -286,6 +289,7 @@
 		const done = () => {
 			slot.loaded = true;
 			slot.state = 'loaded';
+			slot.glow = glowCopies(ent.object3D);
 			updateCustomModels();
 			refreshModelUi();
 		};
@@ -349,6 +353,104 @@
 	}
 
 	/** One saber of a parsed .saber file as a three.js group. */
+	/* ------------------------------------------------------------------ bloom copies */
+
+	// Objects on this layer are invisible to every camera except bloom.js's glow pass.
+	const GLOW_LAYER = 11;
+
+	function glowMaterial(color, map, opacity) {
+		return new THREE.MeshBasicMaterial({color, map: map || null, transparent: true, opacity: opacity == null ? 1 : opacity, side: THREE.DoubleSide, depthWrite: false, fog: false});
+	}
+
+	/** Which parts bloom: 'glow' (like the game), 'colored' (saber-colored) or 'all'. */
+	const bloomSource = s => ((s || vis().sabers).bloom || {}).source || 'glow';
+
+	/* ------------------------------------------------------------------ saber text */
+
+	// TextMeshPro text from a .saber: glyph quads over the font's signed distance field atlas, cut
+	// at the material's edge with an optional outline, like TextMeshPro's own shader. The text
+	// color comes per vertex (rich text <color> tags), the face color from the material.
+	const TEXT_VERTEX = [
+		'attribute vec4 blpColor;',
+		'varying vec2 vUv;',
+		'varying vec4 vColor;',
+		'void main() {',
+		'  vUv = uv;',
+		'  vColor = blpColor;',
+		'  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+		'}',
+	].join('\n');
+	const TEXT_FRAGMENT = [
+		'uniform sampler2D map;',
+		'uniform vec4 faceColor;',
+		'uniform vec4 outlineColor;',
+		'uniform float edge;',
+		'uniform float outline;',
+		'uniform float softness;',
+		'uniform float opacity;',
+		'varying vec2 vUv;',
+		'varying vec4 vColor;',
+		'void main() {',
+		'  float d = texture2D(map, vUv).a;',
+		'  float aa = max(fwidth(d), 0.0001);',
+		'  float outer = edge - outline * 0.5;',
+		'  float alpha = smoothstep(outer - aa - softness, outer + aa, d);',
+		'  vec4 face = faceColor * vColor;',
+		'  vec4 color = outline > 0.0 ? mix(outlineColor, face, smoothstep(edge + outline * 0.5 - aa, edge + outline * 0.5 + aa, d)) : face;',
+		'  gl_FragColor = vec4(color.rgb, color.a * alpha * opacity);',
+		'  if (gl_FragColor.a < 0.004) discard;',
+		'  gl_FragColor = linearToOutputTexel(gl_FragColor);',
+		'}',
+	].join('\n');
+
+	function textMaterial(mat, color, map, opacity) {
+		const t = mat.text;
+		return new THREE.ShaderMaterial({
+			uniforms: {
+				map: {value: map},
+				faceColor: {value: new THREE.Vector4(color.r, color.g, color.b, mat.color[3])},
+				outlineColor: {value: new THREE.Vector4(t.outlineColor[0], t.outlineColor[1], t.outlineColor[2], t.outlineColor[3])},
+				edge: {value: t.edge},
+				outline: {value: t.outline},
+				softness: {value: t.softness},
+				opacity: {value: opacity == null ? 1 : opacity},
+			},
+			vertexShader: TEXT_VERTEX,
+			fragmentShader: TEXT_FRAGMENT,
+			transparent: true,
+			depthWrite: false,
+			side: THREE.DoubleSide,
+			extensions: {derivatives: true},
+		});
+	}
+
+	let noGlow = null; // stands in for the parts of a glow copy that don't glow
+
+	/** Adds the glowing materials of `mesh` (others null) as a copy that only the glow pass draws. */
+	function addGlowCopy(mesh, glowMaterials) {
+		const list = Array.isArray(glowMaterials) ? glowMaterials : [glowMaterials];
+		if (!list.some(Boolean)) return 0;
+		noGlow = noGlow || new THREE.MeshBasicMaterial({visible: false});
+		const copy = new THREE.Mesh(mesh.geometry, Array.isArray(glowMaterials) ? glowMaterials.map(g => g || noGlow) : glowMaterials);
+		copy.name = 'blpGlow';
+		copy.layers.set(GLOW_LAYER);
+		copy.frustumCulled = mesh.frustumCulled;
+		mesh.add(copy);
+		return 1;
+	}
+
+	function glowCopies(obj) {
+		let n = 0;
+		if (obj) obj.traverse(o => o.name === 'blpGlow' && n++);
+		return n;
+	}
+
+	R.saberGlow = {
+		layer: GLOW_LAYER,
+		/** Glow copies on the custom models currently shown. */
+		count: () => Object.values(st.models).reduce((n, slot) => n + (slot.loaded && slot.el ? slot.glow || 0 : 0), 0),
+	};
+
 	function buildSaberObject(parsed, hand, m) {
 		const side = parsed[hand] || parsed.left || parsed.right;
 		const textures = saberTextures(parsed);
@@ -362,14 +464,27 @@
 			}
 			// Materials marked for custom colors take the saber color, as in the game.
 			const tint = mat.saberColor || m.tint;
-			const params = {
-				color: tint ? new THREE.Color(saberColor(hand)) : new THREE.Color(mat.color[0], mat.color[1], mat.color[2]),
-				map,
-				transparent: mat.transparent,
-				opacity: mat.color[3],
-				side: THREE.DoubleSide,
-			};
+			const color = tint ? new THREE.Color(saberColor(hand)) : new THREE.Color(mat.color[0], mat.color[1], mat.color[2]);
+			if (mat.text && map) return textMaterial(mat, color, map);
+			// The reader says how each part is drawn; a color's alpha only counts when it's see-through.
+			const params = {color, map, transparent: mat.transparent, opacity: mat.transparent ? mat.color[3] : 1, side: THREE.DoubleSide};
+			if (mat.blend === 'additive') Object.assign(params, {blending: THREE.AdditiveBlending, depthWrite: false});
+			if (mat.blend === 'cutout' && map) params.alphaTest = Math.min(0.99, Math.max(0.01, mat.cutoff));
 			return m.unlit ? new THREE.MeshBasicMaterial(params) : new THREE.MeshStandardMaterial(Object.assign(params, {roughness: 0.6, metalness: 0.1}));
+		});
+		// The game blooms each part by its material's _Glow / _Bloom value. The other bloom sources
+		// add the saber-colored parts, or everything, at full glow.
+		const source = bloomSource();
+		const glowMaterials = parsed.materials.map((mat, i) => {
+			const colored = mat.saberColor || m.tint;
+			const glow = source === 'all' || (source === 'colored' && colored) ? Math.max(mat.glow, 1) : mat.glow;
+			if (!(glow > 0)) return null;
+			const c = colored ? new THREE.Color(saberColor(hand)) : new THREE.Color(mat.color[0], mat.color[1], mat.color[2]);
+			c.multiplyScalar(Math.min(glow, 2));
+			if (mat.text && materials[i].isShaderMaterial) return textMaterial(mat, c, materials[i].uniforms.map.value);
+			const g = glowMaterial(c, materials[i].map, mat.transparent ? mat.color[3] : 1);
+			g.alphaTest = materials[i].alphaTest || 0;
+			return g;
 		});
 		const group = new THREE.Group();
 		for (const part of side.parts) {
@@ -377,12 +492,14 @@
 			setAttr(geo, 'position', new THREE.BufferAttribute(part.positions, 3));
 			if (part.normals) setAttr(geo, 'normal', new THREE.BufferAttribute(part.normals, 3));
 			if (part.uvs) setAttr(geo, 'uv', new THREE.BufferAttribute(part.uvs, 2));
+			if (part.text) setAttr(geo, 'blpColor', new THREE.BufferAttribute(part.colors || new Float32Array((part.positions.length / 3) * 4).fill(1), 4));
 			const small = part.positions.length / 3 < 65536;
 			geo.setIndex(new THREE.BufferAttribute(small ? new Uint16Array(part.indices) : part.indices, 1));
 			for (const g of part.groups) geo.addGroup(g.start, g.count, g.material);
 			geo.computeBoundingSphere();
 			const mesh = new THREE.Mesh(geo, materials);
 			mesh.name = part.name;
+			addGlowCopy(mesh, glowMaterials);
 			group.add(mesh);
 		}
 		return group;
@@ -435,6 +552,25 @@
 	}
 
 	function prepareModel(mesh, hand, m) {
+		// glTF models mark glowing parts with an emissive color; those get bloom copies (added
+		// after the conversion below, so it doesn't touch them). The other bloom sources add the
+		// whole model (tinted: it is all saber-colored).
+		const source = bloomSource();
+		const whole = source === 'all' || (source === 'colored' && m.tint);
+		const glowFor = mat => {
+			if (!mat) return null;
+			const em = mat.emissive;
+			const emissive = !!em && em.r + em.g + em.b >= 0.05;
+			if (!emissive && !whole) return null;
+			const c = m.tint ? new THREE.Color(saberColor(hand)) : emissive ? em.clone() : mat.color ? mat.color.clone() : new THREE.Color(1, 1, 1);
+			const amount = emissive ? Math.min(mat.emissiveIntensity == null ? 1 : mat.emissiveIntensity, 2) : 1;
+			return glowMaterial(c.multiplyScalar(amount), emissive ? mat.emissiveMap : mat.map, mat.opacity);
+		};
+		const glowing = [];
+		mesh.traverse(o => {
+			if (!o.isMesh || !o.material || o.isSkinnedMesh) return;
+			glowing.push([o, Array.isArray(o.material) ? o.material.map(glowFor) : glowFor(o.material)]);
+		});
 		if (m.unlit || m.tint) {
 			const tint = m.tint ? new THREE.Color(saberColor(hand)) : null;
 			const convert = mat => {
@@ -466,6 +602,7 @@
 				if (o.isMesh && o.material) o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
 			});
 		}
+		for (const [o, g] of glowing) addGlowCopy(o, g);
 		if (m.autoFit) fitModel(mesh);
 	}
 
@@ -649,7 +786,7 @@
 		const target = v => ({value: v, label: t('r.modelTarget.' + v)});
 		body.appendChild(ui.select(t('r.modelTarget'), ['both', 'left', 'right'].map(target), st.dropTarget, v => (st.dropTarget = v)));
 		body.appendChild(dropZone());
-		let warnings = null;
+		let warnings = [];
 		for (const hand of ['left', 'right']) {
 			const ref = String(m[hand] || '').trim();
 			if (!ref) continue;
@@ -658,7 +795,7 @@
 			// .saber files name themselves (and their author) in their descriptor.
 			const info = slot.info;
 			const label = info && info.name ? (info.author ? t('r.modelBy', {name: info.name, author: info.author}) : info.name) : modelName(ref);
-			if (info && info.warnings.length && !warnings) warnings = info.warnings;
+			if (info) for (const w of info.warnings) if (!warnings.includes(w)) warnings.push(w);
 			body.appendChild(
 				ui.row(
 					ui.h('span', {class: 'blp-r-hint blp-r-inline blp-r-grow', title: ref}, t('common.' + hand) + ': ' + label + status),
@@ -666,7 +803,15 @@
 				)
 			);
 		}
-		if (warnings) body.appendChild(ui.hint(t('r.modelNote') + ' ' + warnings[0] + (warnings.length > 1 ? ' ' + t('r.modelMoreWarnings', {n: warnings.length - 1}) : '')));
+		// What the reader skipped or changed (parts it can't show, missing characters, …).
+		if (warnings.length === 1) body.appendChild(ui.hint(t('r.modelNote') + ' ' + warnings[0]));
+		else if (warnings.length) {
+			const open = st.notesOpen;
+			const list = ui.h('details', {class: 'blp-r-notes'}, ui.h('summary', {class: 'blp-r-hint'}, t('r.modelNotes', {n: warnings.length})), ...warnings.map(w => ui.hint(w)));
+			list.open = !!open;
+			list.addEventListener('toggle', () => (st.notesOpen = list.open));
+			body.appendChild(list);
+		}
 		loadStoredModels();
 		if (st.storedModels && st.storedModels.length) {
 			const options = [{value: '', label: t('r.modelChoose')}].concat(st.storedModels.map(x => ({value: 'stored:' + x.name, label: x.name})));
@@ -1153,7 +1298,19 @@
 				x => set('sabers.style', x)
 			)
 		);
-		if (s.style === 'custom') renderModelControls(body);
+		if (s.style === 'custom') {
+			renderModelControls(body);
+			const b = s.bloom;
+			body.appendChild(ui.toggle(t('f.visuals.sabers.bloom.enabled'), b.enabled, x => set('sabers.bloom.enabled', x), t('d.visuals.sabers.bloom.enabled')));
+			if (b.enabled) {
+				body.appendChild(ui.select(t('f.visuals.sabers.bloom.source'), ['glow', 'colored', 'all'].map(v => ({value: v, label: t('bloom.source.' + v)})), bloomSource(), x => set('sabers.bloom.source', x), t('d.visuals.sabers.bloom.source')));
+				body.appendChild(ui.range(t('f.visuals.sabers.bloom.strength'), {min: 0, max: 300, step: 5, value: b.strength, unit: '%'}, x => set('sabers.bloom.strength', x)));
+				body.appendChild(ui.range(t('f.visuals.sabers.bloom.size'), {min: 0, max: 100, step: 5, value: b.size, unit: '%'}, x => set('sabers.bloom.size', x)));
+				body.appendChild(ui.range(t('f.visuals.sabers.bloom.threshold'), {min: 0, max: 100, step: 5, value: b.threshold || 0, unit: '%'}, x => set('sabers.bloom.threshold', x), t('d.visuals.sabers.bloom.threshold')));
+				const loaded = Object.values(st.models).some(slot => slot.loaded);
+				if (loaded && !R.saberGlow.count()) body.appendChild(ui.hint(t('r.bloomNoGlow')));
+			}
+		}
 		body.appendChild(ui.range(t('f.visuals.sabers.glowIntensity'), {min: 0, max: 600, step: 10, value: s.glowIntensity, unit: '%'}, x => set('sabers.glowIntensity', x)));
 		body.appendChild(ui.toggle(t('f.visuals.sabers.trailOverride'), s.trailOverride, x => set('sabers.trailOverride', x)));
 		if (s.trailOverride) {
