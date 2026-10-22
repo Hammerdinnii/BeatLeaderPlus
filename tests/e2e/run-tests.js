@@ -546,6 +546,149 @@ function watch(page, label) {
 	check('.saber files are read in a background worker on the replay page', parsedIn === 'worker', parsedIn);
 	check('.saber file: name and author from its descriptor', saberModel.status.length === 2 && saberModel.status.every(x => /Test Saber ✦ by BeatLeaderPlus tests · loaded/.test(x)), saberModel.status);
 
+	// Bloom on the parts that glow in the game (_Glow / _Bloom): copies on a layer no camera draws.
+	const glow = await page.evaluate(() => {
+		const copies = [];
+		BLPR.ctx.leftSaber.object3D.traverse(o => o.name === 'blpGlow' && copies.push({layer: o.layers.mask, mats: o.material.map(m => (m ? m.name || 'glow' : null)).length}));
+		return {count: BLPR.saberGlow.count(), layer: BLPR.saberGlow.layer, copies};
+	});
+	// Left saber: blade (_Glow 1) and handle (_Glow 1, own color); the accent (no glow) gets none.
+	check('glowing .saber parts get bloom copies on their own layer', glow.count === 3 && glow.copies.length === 2 && glow.copies.every(c => c.layer === 1 << glow.layer), glow);
+	// With BLP_SHOTS: a close-up of the paused sabers without and with bloom, to look at.
+	const closeUp = () =>
+		page.evaluate(() => {
+			BLPR.api.pause();
+			BLPR.camera.setMode('default', {silent: true});
+			const lc = BLPR.ctx.mainCamera.components['look-controls'];
+			BLPR.ctx.mainCamera.object3D.position.set(0, 1.35, 0.75);
+			lc.pitchObject.rotation.x = -0.25;
+			lc.yawObject.rotation.y = 0;
+		});
+	const bloomShot = async name => {
+		if (!process.env.BLP_SHOTS) return;
+		await closeMenus();
+		await closeUp();
+		await sleep(2500);
+		await page.screenshot({path: path.join(process.env.BLP_SHOTS, name)});
+	};
+	await bloomShot('bloom-off.png');
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {bloom: {enabled: true, strength: 150, size: 60}}}}));
+	await page.waitForFunction(() => BLPR.saberBloomStats.frames > 2, null, {timeout: 15000}).catch(() => null);
+	await bloomShot('bloom-on.png');
+	if (process.env.BLP_SHOTS) {
+		await page.evaluate(() => BLPR.api.play());
+		await page.evaluate(() => BLPR.ui.openSettings());
+	}
+	const bloom = await page.evaluate(() => {
+		const rt = BLPR.saberBloom.target();
+		if (!rt) return {frames: BLPR.saberBloomStats.frames, lit: 0};
+		const px = new Uint8Array(rt.width * rt.height * 4);
+		BLPR.ctx.renderer.readRenderTargetPixels(rt, 0, 0, rt.width, rt.height, px);
+		let lit = 0;
+		for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 30) lit++;
+		return {frames: BLPR.saberBloomStats.frames, lit, share: lit / (rt.width * rt.height), size: [rt.width, rt.height]};
+	});
+	// Lit around the sabers only: a whole lit image would mean it isn't cleared between frames.
+	check('bloom pass runs after the main view and lights only the glowing parts', bloom.frames > 2 && bloom.lit > 50 && bloom.share < 0.25, bloom);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {bloom: {enabled: false}}}}));
+	await sleep(600);
+	const bloomOff = await page.evaluate(() => BLPR.saberBloomStats.frames);
+	await sleep(1500);
+	check('bloom off: the pass stops', (await page.evaluate(() => BLPR.saberBloomStats.frames)) === bloomOff);
+
+	// A saber whose stick is Unity's built-in Cylinder, with TextMeshPro text (SDF font atlas), a
+	// legacy TextMesh, a mesh from another file and a trail renderer.
+	const extrasFile = fs.readFileSync(path.join(DIR, '..', 'fixtures', 'extras-unity2021.3.saber'));
+	await dropFile(extrasFile.toString('base64'), 'extras-unity2021.3.saber');
+	const extrasParts = () =>
+		page.evaluate(() => {
+			const parts = side => {
+				const ent = BLPR.ctx[side].querySelector('.blp-saber-model');
+				const group = ent && ent.getObject3D('mesh');
+				return group
+					? group.children.map(m => {
+							const mat = m.material[m.geometry.groups[0].materialIndex];
+							return {name: m.name, shader: !!mat.isShaderMaterial, colors: !!m.geometry.attributes.blpColor, transparent: mat.transparent, opacity: mat.opacity, additive: mat.blending === THREE.AdditiveBlending, alphaTest: mat.alphaTest};
+						})
+					: [];
+			};
+			return {left: parts('leftSaber'), right: parts('rightSaber'), notes: Array.from(document.querySelectorAll('#blp-sec-sabers .blp-r-notes > .blp-r-hint')).map(e => e.textContent)};
+		});
+	await page.waitForFunction(() => {
+		const ent = BLPR.ctx.leftSaber.querySelector('.blp-saber-model');
+		const group = ent && ent.getObject3D('mesh');
+		return group && group.children.some(m => m.name === 'Cylinder') && document.querySelector('#blp-sec-sabers .blp-r-notes');
+	}, null, {timeout: 30000}).catch(() => null);
+	const extrasModel = await extrasParts();
+	check('.saber: a stick made from Unity\'s built-in Cylinder shows', extrasModel.left.some(p => p.name === 'Cylinder'), extrasModel.left);
+	check('.saber: TextMeshPro text drawn from its font atlas', extrasModel.left.some(p => p.name === 'Text "TILE+ HI!"' && p.shader && p.colors), extrasModel.left);
+	check('.saber: legacy TextMesh drawn with a plain font (in the worker)', extrasModel.right.some(p => p.name === 'Text "BL+"'), extrasModel.right);
+	const rightPart = name => extrasModel.right.find(p => p.name === name) || {};
+	check(
+		'.saber: alpha 0 (no glow) stays solid; queue, render type and blend factors decide see-through',
+		rightPart('Cube').opacity === 1 && !rightPart('Cube').transparent && rightPart('Quad').transparent && Math.abs(rightPart('Quad').opacity - 0.35) < 0.01 && rightPart('Sphere').additive && rightPart('Capsule').alphaTest > 0,
+		extrasModel.right
+	);
+	check('notes list what the model skipped', extrasModel.notes.some(n => /trail renderer/.test(n)) && extrasModel.notes.some(n => /another file/.test(n)), extrasModel.notes);
+	// With BLP_SHOTS: the text and the stick seen from a camera of our own, 1.1 m in front of the
+	// text and a bit to the side (bloom included, as in BL+ screenshots).
+	const extrasShot = async name => {
+		if (!process.env.BLP_SHOTS) return;
+		const url = await page.evaluate(() => {
+			const r = BLPR.ctx.renderer;
+			const group = BLPR.ctx.leftSaber.querySelector('.blp-saber-model').getObject3D('mesh');
+			group.updateMatrixWorld(true);
+			const text = group.children.find(m => /^Text/.test(m.name));
+			text.geometry.computeBoundingSphere();
+			const center = text.geometry.boundingSphere.center.clone().applyMatrix4(text.matrixWorld);
+			const n = text.geometry.attributes.normal;
+			const normal = new THREE.Vector3(n.getX(0), n.getY(0), n.getZ(0)).transformDirection(text.matrixWorld);
+			const side = new THREE.Vector3(1, 0, 0).transformDirection(text.matrixWorld);
+			const canvas = r.domElement;
+			const cam = new THREE.PerspectiveCamera(45, canvas.width / canvas.height, 0.01, 100);
+			cam.position.copy(center).addScaledVector(normal, 1.1).addScaledVector(side, 0.35);
+			cam.up.copy(new THREE.Vector3(0, 0, 1).transformDirection(text.matrixWorld));
+			cam.lookAt(center);
+			cam.updateMatrixWorld(true);
+			const clear = r.getClearColor().clone();
+			const alpha = r.getClearAlpha();
+			r.setScissorTest(false);
+			r.setViewport(0, 0, canvas.width / r.getPixelRatio(), canvas.height / r.getPixelRatio());
+			r.setClearColor(0x101018, 1);
+			r.clear(true, true, true);
+			r.render(BLPR.ctx.scene.object3D, cam);
+			BLPR.saberBloom.apply(cam);
+			const url = canvas.toDataURL('image/png');
+			r.setClearColor(clear, alpha);
+			return url;
+		});
+		fs.writeFileSync(path.join(process.env.BLP_SHOTS, name), Buffer.from(url.split(',')[1], 'base64'));
+	};
+	await extrasShot('text-stick.png');
+	// Every shader, the text's included (compiled now even if the text is out of view), links.
+	const programs = await page.evaluate(() => {
+		const r = BLPR.ctx.renderer;
+		r.compile(BLPR.ctx.scene.object3D, BLPR.ctx.scene.camera);
+		const gl = r.getContext();
+		return r.info.programs.map(p => ({ok: !!gl.getProgramParameter(p.program, gl.LINK_STATUS), text: gl.getAttribLocation(p.program, 'blpColor') >= 0}));
+	});
+	check('text shader compiles and links in the replayer', programs.some(p => p.text) && programs.every(p => p.ok), programs.filter(p => p.text || !p.ok));
+	// Bloom on the whole model: every part gets a glow copy (10: blade, handle, stick and text on the
+	// left; blade, drawn text and four built-in shapes on the right).
+	const framesBefore = await page.evaluate(() => BLPR.saberBloomStats.frames);
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {bloom: {enabled: true, source: 'all', threshold: 50}}}}));
+	await page.waitForFunction(() => BLPR.saberGlow.count() === 10, null, {timeout: 20000}).catch(() => null);
+	const glowAll = await page.evaluate(() => BLPR.saberGlow.count());
+	check('bloom source "whole model": every part blooms', glowAll === 10, glowAll);
+	await page.waitForFunction(n => BLPR.saberBloomStats.frames > n + 2, framesBefore, {timeout: 15000}).catch(() => null);
+	const threshold = await page.evaluate(() => {
+		const pass = BLPR.saberBloom.pass();
+		return pass && pass.highPassUniforms.luminosityThreshold.value;
+	});
+	check('bloom threshold reaches the bloom pass', threshold === 0.5, threshold);
+	await extrasShot('text-stick-bloom.png');
+	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {bloom: {enabled: false, source: 'glow', threshold: 0}}}}));
+
 	await page.evaluate(() => BLPR.patchSettings({visuals: {sabers: {style: 'default', customModel: {left: '', right: ''}}}}));
 	await page.keyboard.press('Backquote');
 

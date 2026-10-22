@@ -36,6 +36,7 @@
 		'injected/ui.js',
 		'injected/camera.js',
 		'injected/visuals.js',
+		'injected/bloom.js',
 		'injected/playback.js',
 		'injected/hud.js',
 		'injected/audio.js',

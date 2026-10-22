@@ -72,8 +72,9 @@ Everything the replayer already offers stays where it is: saber colors, saber wi
 - **Trails**: color (follow the saber or custom), width (how much of the blade the trail covers) and brightness, layered on the official trail.
 - **Glow intensity** and **saber styles**: neon, particle, or a **custom saber model**. Saber colors always come from the replayer's own color pickers.
 - **Custom saber models**: choose "Custom model" in Settings → BL+ and drop a Beat Saber **`.saber`** file, or a `.glb`, self-contained `.gltf` or `.obj` model, on the drop zone (or click it to pick one), for both sabers or one hand. The model is saved, shown spinning in the drop zone and put on the sabers right away. Scale, rotation, saber-color tint and hiding the default blade are adjustable, and saved models can be reused or managed on the options page.
-  - **`.saber` files** are read directly: their left and right sabers, meshes, materials, textures, name and author. They are placed exactly as in the game, and materials marked for custom colors (`_CustomColors`, or glowing ones without that flag) take the replay's saber colors. Shaders can't run outside Unity, so materials are drawn with their base color and main texture (flat shading by default); trails, particles and other scripted effects aren't shown. Files are read in a background worker so the replay keeps playing.
+  - **`.saber` files** are read directly: their left and right sabers, meshes, materials, textures, name and author. They are placed exactly as in the game, and materials marked for custom colors (`_CustomColors`, or glowing ones without that flag) take the replay's saber colors. Parts built from Unity's own shapes (Cube, Cylinder, Sphere, Capsule, Plane, Quad), which a `.saber` only points to, are rebuilt. TextMeshPro text is set from the saber's own font (its distance-field atlas, with outline); legacy TextMesh and UI text are drawn with a plain font. Shaders can't run outside Unity, so materials are drawn with their base color and main texture (flat shading by default); trails, particles and other scripted effects aren't shown, and the drop zone lists anything that was skipped. Files are read in a background worker so the replay keeps playing.
   - **3D models** are fitted to the blade automatically (longest side along the blade, grip at the hilt).
+  - **Bloom** (prototype, off by default): the parts of a custom saber that glow in the game (the `.saber`'s `_Glow` / `_Bloom` values, or emissive materials in `.glb` models) get a soft bloom like in the game. Adjustable: which parts bloom (glowing parts like the game, saber-colored parts, or the whole model), strength, size and threshold. It uses the replayer's own UnrealBloomPass on only those parts; the ortho views get none, and notes in front of a blade don't hide its bloom.
 - **Mistake effects**: screen flashes for misses, bad cuts and bombs, 3D markers (ring, cross or pillar) and hit particles (saber color, custom, or colored by accuracy).
 - **Show or hide** each saber, the trails, notes, bombs, walls, arcs and chains. This uses three.js layers, so the replayer's object pools are left alone.
 - **Accuracy heat** (`Alt+Shift+A`): tints each note with the cut score it receives in this replay (115 / 110+ / 105+ / 100+ / lower / mistake).
@@ -215,7 +216,8 @@ lib/
   schema.js              declarative settings schema used by options and popup
   zip.js                 dependency-free zip reader for hitsound packs
   unity-saber.js         .saber reader: Unity asset bundles (LZ4/LZMA), serialized files and
-                         type trees, meshes, materials, textures; runs in a worker in the page
+                         type trees, meshes, materials, textures, Unity's built-in shapes,
+                         TextMeshPro / TextMesh text; runs in a worker in the page
 popup.* / options.*      extension UI
 styles/theme.css         styles for UI added to the website
 styles/replay-ui.css     styles for the additions to the replayer's menus and timeline
