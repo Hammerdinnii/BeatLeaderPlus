@@ -1,283 +1,59 @@
 # BeatLeaderPlus
 
-A Manifest V3 Chrome extension that adds a customizable enhancement layer to [BeatLeader](https://beatleader.com) and, above all, to its **web replay viewer** (`replay.beatleader.com` / `replay.beatleader.xyz`, including replays embedded in iframes).
+A Chrome extension that adds options to [BeatLeader](https://beatleader.com) and its web replay viewer.
 
-In the replay viewer, BeatLeaderPlus **extends the replayer's own interface** instead of adding a second one. There is no floating panel or extra HUD. New options appear as a **BL+ tab** in the replayer's Settings menu, as an extra block and a **BL+ tab** in its Camera menu, and as extra entries in its right-click menu. Features build on what the replayer already does (its free camera, saber colors, "slow down on mistakes", hitsound volume and score HUD) rather than duplicating it.
+In the replay viewer it doesn't add a second interface: its options appear as a **BL+ tab** in the replayer's own Settings and Camera menus, and in its right-click menu.
 
-The additions include first-person camera tuning, orbit and follow cameras, camera presets and recorded camera paths; note, wall, trail, saber-style and picture settings; frame stepping, reverse playback, A-B loops, bookmarks, pause-at-mistakes, speed buttons and an FPS limit; a PP estimate and a resizable, recolorable score HUD; extra hitsounds; and screenshots and clip recording. On the website it adds a theme editor and extras such as `.bsor` downloads, filters, score comparison and profile statistics. Almost everything is configurable, and changes apply to open tabs straight away.
+> Unofficial and fan-made. Not affiliated with or endorsed by BeatLeader.
 
-> BeatLeaderPlus is an unofficial, fan-made extension. It is not affiliated with or endorsed by BeatLeader. The popup and the options page say so too.
+## Install
 
----
+1. Download this repository (**Code → Download ZIP**, then unzip it) or `git clone` it.
+2. Open `chrome://extensions` and turn on **Developer mode** (top right).
+3. Click **Load unpacked** and pick the `BeatLeaderPlus` folder (the one with `manifest.json`).
 
-## Installation (load unpacked)
-
-1. Download or clone this repository:
-   ```sh
-   git clone https://github.com/hammerdinnii/BeatLeaderPlus.git
-   ```
-2. Open `chrome://extensions` (or `edge://extensions`, `brave://extensions`).
-3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and select the `BeatLeaderPlus` folder, the one that contains `manifest.json`.
-5. Optional: pin the extension from the puzzle-piece menu. `Alt+Shift+B` opens the popup.
-
-On first install the options page opens. There is no build step and there are no runtime dependencies. The files in this folder are the extension.
-
-To update, pull the latest changes and click the reload icon on the extension's card in `chrome://extensions`.
-
-Requires Chrome 111 or newer (or another Chromium-based browser).
-
----
+Works in Chrome 111+ and other Chromium browsers (Edge, Brave). To update, replace the folder and click the reload icon on the extension's card.
 
 ## Features
 
-### Website: theme and UI
+### Replay viewer
 
-- **Theme editor**: primary, secondary, background, surface, text, muted text, accent, links, borders, positive/negative and the rank #1/#2/#3 colors. BeatLeaderPlus remaps the site's own CSS variables, so every component follows the theme.
-- **Presets**: Dark+, OLED Black, Light, High Contrast and Custom. The options page shows a live preview.
-- **Typography**: font family, size and weight overrides.
-- **Density slider** and **compact mode**, plus a corner-radius setting.
-- **Hide elements**: named groups (header, footer, sidebars, social links, ads, banners, avatars, headset icons, flags, background images, cinematics) or your own CSS selectors.
-- **Custom CSS** box. You can also apply your font and custom CSS inside the replay viewer.
-- **Customizable keyboard shortcuts** for everything (see below).
-
-### Replay viewer: where things are
-
-| Replayer menu | What BeatLeaderPlus adds |
+| | |
 | --- | --- |
-| **Settings → BL+** tab (`` ` `` opens it) | Notes & walls, Sabers & trails, Effects, Show/hide, Picture, Playback, Timeline, Performance (FPS limit), Extra hitsounds, Export, Score HUD and Interface sections |
-| **Camera → Main** tab | A BeatLeaderPlus block under the official left/center/right buttons: Orbit, Smooth follow, First person, a preset picker, "save as preset" and the camera path picker |
-| **Camera → BL+** tab | First person and orthographic views first (the replayer's own settings, mirrored, plus BL+ additions), then free camera tuning, orbit/follow options, the preset list and camera path tools |
-| **Right-click menu** | "Copy URL with BL+ camera and colors", "Screenshot" and "Record clip", next to the official "Copy URL" entries |
-| **Score HUD** (3D) | A PP estimate line under the accuracy, and an optional last-cut line, in the HUD's own font. Both follow the replayer's "Show HUD" setting. The whole HUD can be resized, moved up or down, recolored and trimmed to the parts you want. |
-| **Timeline** | Bookmark flags and the A-B loop region, next to the replayer's own accuracy graph and mistake markers |
+| **Camera** | First person tuning (height, side offset, smoothing, level horizon), orthographic top/right/back views, orbit and smooth-follow cameras, camera presets with hotkeys, recorded camera paths you can share as a link |
+| **Sabers** | Load a Beat Saber **`.saber`** file or a `.glb` / `.gltf` / `.obj` model as your sabers, with adjustable **bloom**. Neon and particle styles, trail color, width and brightness |
+| **Visuals** | Note, chain and arc colors, note size, wall opacity, brightness / contrast / saturation, accuracy heat on notes, mistake flashes and markers, show or hide any object |
+| **Playback** | Frame-by-frame stepping, reverse playback, A-B loop, bookmarks, pause at mistakes, slow motion on low-accuracy cuts, speed buttons, FPS limit |
+| **HUD and sound** | PP estimate in the score HUD, resizable and recolorable HUD, extra hitsounds for bad cuts, misses and bombs (or your own sound pack) |
+| **Export** | Screenshots, clip recording (`.webm`), share links that keep your camera and colors |
 
-Everything the replayer already offers stays where it is: saber colors, saber width, trail type and length, environment colors, lasers/floor/lights, headset opacity, the score HUD, "change speed around mistakes", the hitsound file and volume, and the FPV camera.
+### Website
 
-### Replay viewer: camera
-
-- **Official free camera, tuned**: the replayer's own WASD camera (`W` `A` `S` `D`, `X`/`C` down/up, drag to look) gets an adjustable move speed, a `Shift` sprint multiplier and optional mouse capture (pointer lock).
-- **Orbit** around the player's head or the play-space center, with radius, height, speed and start angle.
-- **Smooth follow**: follows the head or the play-space center, with lag, look-ahead and a world-space or head-relative offset.
-- **First person** uses the replayer's own POV camera. Its settings sit at the top of Camera → BL+: a First person camera toggle and the replayer's own field of view, Z position offset, X rotation offset, "force look upright" and "save FPV toggle". They are the same settings as in its FPV tab, so changing either one changes both. BeatLeaderPlus adds a **height offset**, a **side offset**, **head smoothing** (50 % is the replayer's own; 0 % follows the head exactly) and a **level horizon** option that ignores head tilt.
-- **Orthographic views**: the replayer's own top, right and back cameras can be switched on in Camera → BL+, with their zoom and render distance (again the same settings as its Ortho tab).
-- **Field of view** slider and **camera smoothing** strength.
-- **Camera presets** with names and hotkeys. Five built-ins ship by default (Cinematic Low, Top Down, Side Follow, First Person, Orbit Showcase), and you can save the live camera as a new preset. Static presets glide the official camera into place and then hand control back to it.
-- **Camera paths**: record position, rotation and FOV over song time (`Shift+G`), add keyframes manually (`Alt+G`), then play back with spline interpolation (`G`). Paths can be renamed, exported or imported as JSON, or **shared via a URL**.
-- **URL parameters** force a preset, mode or path on load (see below).
-
-### Replay viewer: visuals and sabers
-
-- **Note colors** independent of the saber colors, plus **chain** and **arc** overrides.
-- **Trails**: color (follow the saber or custom), width (how much of the blade the trail covers) and brightness, layered on the official trail.
-- **Glow intensity** and **saber styles**: neon, particle, or a **custom saber model**. Saber colors always come from the replayer's own color pickers.
-- **Custom saber models**: choose "Custom model" in Settings → BL+ and drop a Beat Saber **`.saber`** file, or a `.glb`, self-contained `.gltf` or `.obj` model, on the drop zone (or click it to pick one), for both sabers or one hand. The model is saved, shown spinning in the drop zone and put on the sabers right away. Scale, rotation, saber-color tint and hiding the default blade are adjustable, and saved models can be reused or managed on the options page.
-  - **`.saber` files** are read directly: their left and right sabers, meshes, materials, textures, name and author. They are placed exactly as in the game, and materials marked for custom colors (`_CustomColors`, or glowing ones without that flag) take the replay's saber colors. Parts built from Unity's own shapes (Cube, Cylinder, Sphere, Capsule, Plane, Quad), which a `.saber` only points to, are rebuilt. TextMeshPro text is set from the saber's own font (its distance-field atlas, with outline); legacy TextMesh and UI text are drawn with a plain font. Shaders can't run outside Unity, so materials are drawn with their base color and main texture (flat shading by default); trails, particles and other scripted effects aren't shown, and the drop zone lists anything that was skipped. Files are read in a background worker so the replay keeps playing.
-  - **3D models** are fitted to the blade automatically (longest side along the blade, grip at the hilt).
-  - **Bloom** (off by default): the parts of a custom saber that glow in the game (the `.saber`'s `_Glow` / `_Bloom` values, or emissive materials in `.glb` models) get a soft bloom like in the game. Adjustable: which parts bloom (glowing parts like the game, saber-colored parts, or the whole model), strength, size and threshold. It uses the replayer's own UnrealBloomPass on only those parts; the ortho views get none, and notes in front of a blade don't hide its bloom.
-- **Mistake effects**: screen flashes for misses, bad cuts and bombs, 3D markers (ring, cross or pillar) and hit particles (saber color, custom, or colored by accuracy).
-- **Show or hide** each saber, the trails, notes, bombs, walls, arcs and chains. This uses three.js layers, so the replayer's object pools are left alone.
-- **Accuracy heat** (`Alt+Shift+A`): tints each note with the cut score it receives in this replay (115 / 110+ / 105+ / 100+ / lower / mistake).
-- **Note size** (notes, bombs and chains, 50–150 %) and **wall opacity**.
-- **Picture**: brightness, contrast and saturation of the 3D view. Screenshots and clips get the same look.
-
-### Replay viewer: playback
-
-- **Frame-by-frame stepping** (`[` / `]`), using either the next recorded replay frame or a fixed step.
-- **Reverse playback** (`Z`), with a configurable scrub rate and speed.
-- **A-B section loop** (`T` sets A, then B, then clears it; `Shift+T` clears), with optional pre-roll.
-- **Bookmarks with notes** (`B` to add, `Shift+B` to jump to the next one). They're saved per replay, shown on the timeline and listed in Settings → BL+ and on the options page.
-- **Low-accuracy cuts in the official slow motion**: cuts below a score threshold get the same slow-down windows as misses and bad cuts. This switch and the replayer's own "change speed around mistakes" (whose speed and offsets are used) work as one: turning either one on or off turns both on or off.
-- **Pause at mistakes**: stops playback at each miss, bad cut, bomb hit or wall hit (each can be switched on or off).
-- **Speed buttons** in Settings → BL+ → Playback for quick speed changes (default 0.5×, 0.75×, 1×, 1.25×; the list is configurable).
-- **FPS limit** in Settings → BL+ → Performance (30 to 240 fps, or no limit): how many frames per second the replay viewer draws. A lower limit saves power and keeps laptops cooler. Only drawing is limited, so the replay, hitsounds and slow motion keep their timing. The section shows how many frames are actually drawn.
-- **Remember speed and jump distance** across sessions (whatever you set with the replayer's own controls).
-- **Bookmark flags and the loop region on the timeline**, alongside the replayer's own accuracy graph and markers.
-
-### Replay viewer: HUD and interface
-
-- **PP estimate** in the replayer's 3D score HUD, from the map's BeatLeader ratings (ranked maps only).
-- Optional **last-cut line**: score with its pre-swing / post-swing / accuracy points.
-- **Score HUD look**: size (it grows around its middle), height, a custom text color, and which parts to show (score, accuracy, combo, multiplier, misses, energy bar).
-- **Hide replayer elements** one by one: song info, player info, the Discord/Patreon corners and the playlist panel.
-- **Toggle overlays** (`Alt+Shift+H`) hides everything BeatLeaderPlus draws in one go.
-
-### Replay viewer: extra hitsounds
-
-- The replayer plays a hitsound for good cuts. BeatLeaderPlus adds sounds for **bad cuts, misses and bomb hits**, each with its own sound and volume.
-- Built-in synthesized sounds (click, tick, chime, buzz, thud, boom).
-- **Hitsound pack import** from a folder, a set of files, or a `.zip` of `.mp3`/`.ogg`/`.wav` files. Slots are auto-assigned from file names.
-- Volumes are relative to the replayer's hitsound slider, so its mixer still controls everything. Sounds are scheduled ahead on the audio clock, so they stay in time at any speed.
-
-### Replay viewer: export and sharing
-
-- **Copy URL with BL+ camera and colors** (`Alt+Shift+C`, or the right-click menu). The link uses the replayer's own `time`, `speed`, `jd` and camera parameters (which work for everyone), plus the orbit/follow mode and BeatLeaderPlus visuals packed into `blpCfg`. Those are applied for that session only.
-- **Screenshot** (`F9`) at any resolution.
-- **Clip recording** (`F8`) using MediaRecorder: configurable length, resolution, fps and bitrate, with optional song audio, saved as `.webm`.
-- **Export** the current camera path or the full settings as JSON.
-
-### Website enhancements
-
-- **Download .bsor** and **compare** buttons next to every replay link. In BeatLeader's score icon grid they appear as extra icons in the same style, and the download icon is left out when the site already shows its own. Replay links also get a "Download replay (.bsor)" right-click entry. (There is no separate "enhanced replayer": every replay link opens the official replayer, which BeatLeaderPlus extends.)
-- **Score comparison**: pick two scores (scales icon) to see accuracy, PP, rank, mistakes, pauses, combo, per-hand accuracy, modifiers, headset and date side by side, with the better value highlighted.
-- **Auto-expand score details**.
-- Following players and favoriting maps are left to BeatLeader itself: its own follow button (with a Followed filter and a feed of their scores) and "Add to playlist".
-- **Quick filters**: my scores, clan, high accuracy (threshold is configurable) and full combo.
-- The **BL+ dock** on profile and leaderboard pages holds statistics, filter and comparison controls. It stays collapsed to a **BL+** button until you click it; a dot on the button means a filter or comparison is active. **Drag the button** to any edge of the window: along the left and right edges the dock runs vertically, along the top and bottom horizontally, and the button stays where you put it when the dock opens. Double-click it to put it back at the bottom. Its size is a setting (Website enhancements → BL+ dock), and its position is remembered per browser.
-- **Profile statistics drawer**: average and median accuracy, FC rate, average stars, an accuracy distribution, personal bests over time and a recent accuracy trend.
-- Optional **extra badges** on scores (misses, bad cuts, pauses, max combo), fetched lazily and cached.
+| | |
+| --- | --- |
+| **Look** | Theme editor with presets (Dark+, OLED, Light, High Contrast), fonts, density, hide page elements, custom CSS |
+| **Scores** | Download `.bsor` and compare buttons on every score, side-by-side score comparison, quick filters (my scores, clan, high accuracy, full combo), extra score badges |
+| **Profile stats** | Accuracy, FC rate, stars, top play, mistakes and per-hand accuracy; charts of accuracy vs stars, accuracy distribution, and accuracy and PP over time, with details when you hover; a sortable table of every score |
+| **BL+ dock** | One button holding the page's BL+ tools; drag it to any edge of the window |
 
 ### Settings
 
-- All settings live in `chrome.storage.sync`, one item per section. They fall back to `chrome.storage.local` for anything larger than the sync quota or when sync is unavailable.
-- **Per-domain overrides**, for example a different theme on `beatleader.xyz`, or different camera defaults on `replay.beatleader.com`.
-- **Import and export** the whole configuration as JSON, optionally including hitsound packs and saber models.
-- **Reset** a single section or everything (with confirmation).
-- **Live apply**: open tabs, including a running replay, update as soon as you change something.
-- The **popup** is configurable too: choose its quick toggles, which sections to show, compact mode and width.
+Everything is set on the options page or in the popup (`Alt+Shift+B`), applies to open tabs right away, syncs with your browser, and can be exported or imported as a file. Every keyboard shortcut can be changed.
 
----
+## Main shortcuts
 
-## Default shortcuts
-
-All shortcuts can be changed in **Options → Keyboard shortcuts**. The options page warns when a key collides with another binding or with one of the replayer's own shortcuts. BeatLeaderPlus handles its keys first.
-
-| Action | Default | Where |
-| --- | --- | --- |
-| Open options | `Alt+Shift+O` | everywhere |
-| Toggle custom theme | `Alt+Shift+T` | everywhere |
-| Toggle overlays (site UI / BeatLeaderPlus additions in the replay) | `Alt+Shift+H` | everywhere |
-| Next / previous page (site) or replay (playlist) | `Alt+Shift+→` / `Alt+Shift+←` | everywhere |
-| Open / close Settings → BL+ | `` ` `` | replay |
-| Cycle camera mode (official → orbit → follow → first person) | `V` | replay |
-| Play / stop camera path | `G` | replay |
-| Record camera path | `Shift+G` | replay |
-| Add camera keyframe | `Alt+G` | replay |
-| Frame back / forward | `[` / `]` | replay |
-| Reverse playback | `Z` | replay |
-| Loop: set A → set B → clear | `T` | replay |
-| Clear loop | `Shift+T` | replay |
-| Add bookmark / next bookmark | `B` / `Shift+B` | replay |
-| Screenshot / record clip | `F9` / `F8` | replay |
-| Copy URL with BL+ camera and colors | `Alt+Shift+C` | replay |
-| Toggle accuracy heat | `Alt+Shift+A` | replay |
-| Camera presets | `Shift+1` … `Shift+5` | replay |
-| Sprint with the official free camera | hold `Shift` while moving | replay |
-
-The defaults avoid the replayer's own shortcuts (`Space` `K` `J` `L` `F` `H` `M` `I` `U` `O` `,` `.` `-` `=` arrows, `Shift+F/Q/R/E/N/P`, `F2` and the `W` `A` `S` `D` `X` `C` camera keys). Speed, seeking and volume are left to the replayer.
-
-## URL parameters
-
-BeatLeaderPlus reads these on replay pages:
-
-| Parameter | Effect |
+| Key | Action |
 | --- | --- |
-| `blpCam=<preset id or name>` | Apply a camera preset on load |
-| `blpMode=orbit\|follow\|pov` | Start in a camera mode |
-| `blpPath=<packed path>` | Load (and optionally auto-play) a shared camera path |
-| `blpCfg=<packed config>` | Session-only overrides for camera and visuals (from "Copy URL with BL+ camera and colors") |
-| `blpPanel=1` | Open Settings → BL+ |
+| `` ` `` | Open Settings → BL+ in the replay viewer |
+| `V` | Cycle camera: official → orbit → follow → first person |
+| `[` / `]` | Previous / next frame |
+| `Z` | Reverse playback |
+| `T` | Loop: set A, set B, clear |
+| `B` | Add a bookmark |
+| `F9` / `F8` | Screenshot / record a clip |
+| `Alt+Shift+O` | Open the options |
 
-Shared links also set the replayer's own `time`, `speed`, `jd`, `cpx/cpy/cpz/crx/cry` and `forceFpv` parameters, so they work without the extension too.
+## More
 
----
-
-## How it works
-
-```
-manifest.json            MV3 manifest (content scripts, web-accessible resources, permissions)
-background.js            service worker: migration, messaging, API fetches, downloads,
-                         context menu, MAIN-world injection fallback
-content-early.js         document_start: loads settings, applies the site theme before first paint
-content.js               document_idle: detects the page type and starts the right modules
-modules/
-  theme.js               theme engine (CSS variables, typography, density, hide rules, custom CSS)
-  hotkeys.js             global shortcuts (isolated world)
-  site-enhancements.js   buttons, filters, comparison, dock
-  site-profile-stats.js  profile statistics drawer (canvas charts)
-  replay-bridge.js       injects the replay runtime and relays messages + storage
-injected-replay.js       page-world bootstrap
-injected/
-  core.js                runtime core: bridge, scene discovery, frame loop, API, hotkeys, events
-  ui.js                  BL+ tabs in the replayer's Settings/Camera menus, right-click menu
-                         items, controls in the replayer's style, hiding replayer elements
-  camera.js              official free camera tuning, orbit/follow, presets, paths, URL params
-  visuals.js             note/trail colors, saber styles, models, effects, visibility, heat
-  playback.js            stepping, reverse, loop, bookmarks, low-acc slow-mo, speed/JD memory
-  hud.js                 PP estimate and last-cut lines in the replayer's score HUD
-  audio.js               extra hitsounds: synthesis, pack decoding, look-ahead scheduling
-  export.js              share links, screenshots, clip recording
-  performance.js         FPS limit (wraps the scene's render loop)
-lib/
-  i18n.js                all user-facing strings (en + partial de)
-  defaults.js            default settings, theme and camera presets, storage keys
-  utils.js               shared helpers (also injected into the page)
-  storage.js             sync/local persistence, migration, per-domain overrides, import/export
-  schema.js              declarative settings schema used by options and popup
-  zip.js                 dependency-free zip reader for hitsound packs
-  unity-saber.js         .saber reader: Unity asset bundles (LZ4/LZMA), serialized files and
-                         type trees, meshes, materials, textures, Unity's built-in shapes,
-                         TextMeshPro / TextMesh text; runs in a worker in the page
-popup.* / options.*      extension UI
-styles/theme.css         styles for UI added to the website
-styles/replay-ui.css     styles for the additions to the replayer's menus and timeline
-```
-
-### Replay viewer injection
-
-The web replayer is built with A-Frame. Content scripts run in an isolated world and can't see `window.AFRAME` or the scene's components, so `modules/replay-bridge.js` injects the runtime into the page's own world:
-
-1. **Primary:** `<script src="chrome-extension://…/injected/…">` tags (listed in `web_accessible_resources`), loaded in order.
-2. **Fallback:** if a page's CSP blocks those tags, the background worker runs `chrome.scripting.executeScript({world: 'MAIN'})` for that frame.
-
-`injected/core.js` waits for `AFRAME`, the `<a-scene>` and the replay components, using a MutationObserver plus polling. It then registers a `blp-runtime` A-Frame component whose `tick`/`tock` drive every module, after the official components and before rendering. It talks to the official components directly:
-
-- `song`: `getCurrentTime`, `setPlaybackRate`
-- `song-controls`: `seek`, `baseSongSpeed`, `computeMissWindows` / `missWindows` (wrapped to add low-accuracy windows)
-- `replay-loader`: `replay`, `allStructs`
-- `camera-mover` (POV, `povchanged`), `replay-player.movementsTock` (wrapped for first-person smoothing and offsets), `look-controls` / `wasd-controls` on the main camera, `beat-generator`, the wall shader (an opacity uniform is added), `settings`
-- the replayer's own settings are changed through its own menu controls (`BLPR.official.set` sets the input and fires `input` / `change`), so its menu, value labels and saved settings stay in sync with the mirrored BL+ controls
-- the `state` system and events such as `replayloaded`, `timechanged`, `colorChanged`, `contextmenuopen` and `showHotkeyNotification`
-
-`injected/ui.js` adds its tab buttons and panes next to the replayer's own (`.settings-tab-button` / `.settings-tab-pane`, `.camera-tab-button` / `.camera-tab-pane`) and switches tabs through the page's own `changeTab` / `changeCameraTab`, so the BL+ tabs behave like the built-in ones. Controls reuse the replayer's markup and classes (`.toggleButton`, `.switch`, `.settingRange`, `.settingButton`, `.menuitem`), so they look native.
-
-The page runtime has no `chrome.*` access, so it uses `window.postMessage` to talk to the bridge. The bridge only accepts an allow-list of requests (bookmarks, camera paths, hitsounds, models, runtime values). Settings patches from the page are restricted to replay-related sections.
-
-### Storage
-
-| Key | Area | Content |
-| --- | --- | --- |
-| `blp_meta`, `blp_s_<section>` | sync (local fallback) | settings, one item per section |
-| `blp_domain_overrides` | local | per-domain differences to the global settings |
-| `blp_runtime` | local | last speed / JD / camera mode / camera path, … |
-| `blp_bookmarks` | local | bookmarks per replay |
-| `blp_camera_paths` | local | recorded camera paths |
-| `blp_hitsound_pack`, `blp_saber_models` | local | imported audio and models (base64) |
-| `blp_site_ui` | local | where the BL+ dock was dragged to on the website |
-
----
-
-## Contributing
-
-There is no build step: edit the files and reload the extension.
-
-- **New setting:** add the default in `lib/defaults.js`, a field in `lib/schema.js` and its label (`f.<path>`) in `lib/i18n.js`. Then read it where the feature lives. The options page and popup pick it up automatically.
-- **New replay feature:** create `injected/my-feature.js` that calls `BLPR.register({name, init(ctx), onSettings(s), onReplay(info), tick(frame), maintain()})`. Put its controls in the replayer's menus with `BLPR.ui.addSettingsSection`, `BLPR.ui.addCameraSection` or `BLPR.ui.addMenuItem`. Add the file to the `FILES` list in `modules/replay-bridge.js` (before `injected-replay.js`). The modules shipped with BeatLeaderPlus are good examples.
-- **New language:** add a table to `STRINGS` in `lib/i18n.js` (missing keys fall back to English) and an option in the language select in `lib/schema.js`.
-- **Tests:** `node --test tests/unit/*.test.js` checks the `.saber` reader against reference data from UnityPy. `tests/e2e/run-tests.js` drives the extension in Chromium against the real BeatLeader web replayer (built unmodified from its repository) and a small leaderboard page. See [tests/README.md](tests/README.md).
-- Use tabs, single quotes and short comments that explain *why*, and avoid external dependencies.
-
-### Known limitations
-
-- The replay features hook into the official replayer's internals (component names, events, element IDs). If the replayer changes significantly, a module may need updating. Each module fails on its own without breaking the others.
-- Website features rely on the site's markup (replay links, `/u/` and `/leaderboard/` links, `.player-score` rows, pagination). They only add elements and never move site nodes.
-- Reverse playback works by repeatedly seeking backwards while paused, so it's silent and its frame rate depends on the update rate setting.
-- "Trail width" controls how much of the blade the trail covers. The PP estimate uses the map's pass, accuracy and tech ratings and ignores modifiers.
-- Custom saber models and some exports depend on what the replayer page's Content Security Policy allows. The replayer has no body avatar to hide.
-- Clip audio includes the song, not hitsounds.
-- Settings → BL+ needs the replayer's tabbed Settings menu. If a future replayer version drops it, the options page still has every setting.
-
-### Privacy
-
-BeatLeaderPlus only talks to the BeatLeader API, through the background worker and only for the features you use (score details and statistics). All data stays in your browser's extension storage and is never sent anywhere else.
-
+- [Guide](docs/GUIDE.md): every feature in detail, all shortcuts, URL parameters, how it works, and how to contribute.
+- Privacy: BeatLeaderPlus only talks to the BeatLeader API, for the features you use. Your settings and data stay in your browser.
