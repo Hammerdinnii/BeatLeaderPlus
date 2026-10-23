@@ -1105,6 +1105,9 @@ function watch(page, label) {
 	await site.click('#blp-dock >> text=BeatLeaderPlus stats');
 	await site.waitForSelector('#blp-stats-drawer .blp-tile', {timeout: 10000}).catch(() => null);
 	await site.waitForFunction(() => Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).filter(c => Number(c.dataset.marks) > 0).length === 4, null, {timeout: 10000}).catch(() => null);
+	const statsTitle = await site.evaluate(() => ({text: document.querySelector('#blp-stats-drawer .blp-stats-title').textContent, heading: (document.querySelector('h1') || {}).textContent || document.title, brokenAvatar: !!document.querySelector('#blp-stats-drawer .blp-stats-avatar')}));
+	// (The test server has no avatar images: a picture that fails to load is left out.)
+	check("stats title: the player's name from the API for this ID, not the page heading", statsTitle.text === 'BeatLeaderPlus stats · Alice Real' && !statsTitle.brokenAvatar, statsTitle);
 	const statsView = await site.evaluate(() => ({
 		tiles: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-tile')).map(t => t.querySelector('.blp-tile-label').textContent + '=' + t.querySelector('.blp-tile-value').textContent),
 		charts: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart h4')).map(e => e.textContent),
