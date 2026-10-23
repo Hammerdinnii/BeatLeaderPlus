@@ -507,3 +507,245 @@
 	color: var(--blpu-muted);
 	font-size: 12px;
 }
+
+/* ---------------------------------------------------------------- profile stats */
+.blp-drawer.blp-stats {
+	width: min(520px, 100vw);
+	transition: transform 0.25s ease-out, width 0.2s ease-out;
+}
+
+.blp-drawer.blp-stats.blp-wide {
+	width: min(1100px, 100vw);
+}
+
+.blp-drawer-tools {
+	display: inline-flex;
+	gap: 6px;
+}
+
+.blp-stats .blp-tiles {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	margin-bottom: 4px;
+}
+
+.blp-stats.blp-wide .blp-tiles {
+	grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+
+.blp-stats .blp-tile {
+	min-width: 0;
+}
+
+.blp-stats .blp-tile-value {
+	font-size: 18px;
+	font-variant-numeric: normal;
+	white-space: nowrap;
+}
+
+.blp-seg {
+	display: inline-flex;
+	margin: 0 0 8px;
+	border: 1px solid var(--blpu-border);
+	border-radius: var(--blpu-radius);
+	overflow: hidden;
+}
+
+.blp-seg-btn {
+	all: unset;
+	cursor: pointer;
+	padding: 6px 14px;
+	font-size: 13px;
+	color: var(--blpu-muted);
+}
+
+.blp-seg-btn + .blp-seg-btn {
+	border-left: 1px solid var(--blpu-border);
+}
+
+.blp-seg-btn:hover {
+	background: color-mix(in srgb, var(--blpu-text) 8%, transparent);
+}
+
+.blp-seg-btn.blp-on {
+	background: var(--blpu-surface);
+	color: var(--blpu-text);
+	font-weight: 700;
+}
+
+.blp-seg-btn:focus-visible {
+	outline: 2px solid var(--blpu-accent);
+	outline-offset: -2px;
+}
+
+.blp-charts {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 12px;
+	margin-top: 14px;
+}
+
+.blp-stats.blp-wide .blp-charts {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.blp-chart {
+	background: var(--blpu-surface);
+	border: 1px solid var(--blpu-border);
+	border-radius: var(--blpu-radius);
+	padding: 10px 12px 6px;
+	min-width: 0;
+}
+
+.blp-drawer-body .blp-chart h4 {
+	margin: 0 0 2px;
+}
+
+.blp-chart-note {
+	margin: 0 0 4px;
+	color: var(--blpu-muted);
+	font-size: 12px;
+}
+
+.blp-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	margin: 2px 0 4px;
+	color: var(--blpu-muted);
+	font-size: 12px;
+}
+
+.blp-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.blp-key {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--blp-key);
+}
+
+.blp-key-ring {
+	background: none;
+	box-shadow: inset 0 0 0 2px var(--blp-key);
+}
+
+.blp-key-line {
+	width: 14px;
+	height: 2px;
+	border-radius: 1px;
+}
+
+.blp-chart-plot {
+	position: relative;
+}
+
+.blp-drawer-body .blp-chart canvas {
+	background: none;
+	border-radius: 0;
+	cursor: crosshair;
+}
+
+.blp-chart canvas:focus-visible {
+	outline: 2px solid var(--blpu-accent);
+	outline-offset: 2px;
+}
+
+.blp-tip {
+	position: absolute;
+	z-index: 2;
+	max-width: 240px;
+	padding: 7px 10px;
+	background: var(--blpu-bg);
+	border: 1px solid var(--blpu-border);
+	border-radius: 6px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+	pointer-events: none;
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.blp-tip[hidden] {
+	display: none;
+}
+
+.blp-tip-title {
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.blp-tip-sub {
+	color: var(--blpu-muted);
+	margin-bottom: 3px;
+}
+
+.blp-tip-row strong {
+	font-weight: 700;
+}
+
+.blp-tip-row span {
+	color: var(--blpu-muted);
+	margin-left: 5px;
+}
+
+.blp-chart-help {
+	margin: 8px 0 0;
+}
+
+.blp-scores {
+	margin-top: 14px;
+}
+
+.blp-scores > summary {
+	cursor: pointer;
+	color: var(--blpu-muted);
+	font-size: 13px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.blp-scores-wrap {
+	max-height: 420px;
+	overflow: auto;
+	margin-top: 8px;
+}
+
+.blp-scores-table {
+	font-size: 12px;
+}
+
+.blp-scores-table th {
+	position: sticky;
+	top: 0;
+	background: var(--blpu-bg);
+}
+
+.blp-scores-table th button {
+	all: unset;
+	cursor: pointer;
+	color: var(--blpu-muted);
+	font-weight: 600;
+}
+
+.blp-scores-table th[aria-sort='ascending'] button::after {
+	content: ' ▲';
+}
+
+.blp-scores-table th[aria-sort='descending'] button::after {
+	content: ' ▼';
+}
+
+.blp-scores-table .blp-num {
+	text-align: right;
+	white-space: nowrap;
+}
+
+.blp-scores-table a {
+	color: inherit;
+}
