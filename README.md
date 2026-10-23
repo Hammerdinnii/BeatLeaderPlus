@@ -1,4 +1,5 @@
 # BeatLeaderPlus
+<img width="640" height="320" alt="BEATLEADERPLUS" src="https://github.com/user-attachments/assets/d06b41cd-b3ac-42cb-b1be-afbde0104760" />
 
 A Chrome extension that adds options to [BeatLeader](https://beatleader.com) and its web replay viewer.
 
