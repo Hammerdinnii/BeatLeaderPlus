@@ -106,6 +106,31 @@ function watch(page, label) {
 			const json = data => new Response(JSON.stringify(data), {headers: {'content-type': 'application/json'}});
 			self.fetch = async (url, opts) => {
 				const u = String(url);
+				if (/api\.beatleader\.com\/player\/[^/]+\/scores/.test(u) && /count=100/.test(u)) {
+					// Profile stats: 100 ranked scores over 14 months (accuracy falls with stars), and for
+					// "recent" a few unranked plays in between that the stats leave out.
+					const scores = [];
+					for (let i = 0; i < 100; i++) {
+						const stars = 6 + ((i * 37) % 70) / 10;
+						const acc = 97.2 - (stars - 6) * 0.55 + (((i * 53) % 17) - 8) / 10;
+						scores.push({
+							id: 9000 + i,
+							accuracy: acc / 100,
+							pp: Math.round(stars * 42 * (acc / 95) ** 6),
+							timepost: 1730000000 + i * 380000,
+							fullCombo: i % 3 !== 0,
+							missedNotes: i % 3 === 0 ? 1 + (i % 4) : 0,
+							badCuts: i % 6 === 0 ? 1 : 0,
+							accLeft: 112.5 + (i % 5) / 10,
+							accRight: 113.1 + (i % 4) / 10,
+							leaderboard: {id: 'lb' + i, song: {name: 'Stats Song ' + i}, difficulty: {difficultyName: i % 2 ? 'ExpertPlus' : 'Expert', modeName: 'Standard', stars}},
+						});
+					}
+					const recent = /sortBy=date/.test(u);
+					if (recent) for (let k = 0; k < 6; k++) scores.push({id: 9900 + k, accuracy: 0.41, pp: 0, timepost: 1767000000 + k, fullCombo: false, missedNotes: 30, leaderboard: {id: 'u' + k, song: {name: 'Unranked ' + k}, difficulty: {difficultyName: 'Hard', stars: null}}});
+					scores.sort((a, b) => (recent ? b.timepost - a.timepost : b.pp - a.pp));
+					return json({data: scores.slice(0, 100)});
+				}
 				if (/api\.beatleader\.com\/player\/[^/]+\/scores/.test(u)) {
 					self.__scoreCalls = (self.__scoreCalls || 0) + 1;
 					const s = Object.assign({}, mock, {id: 5000 + self.__scoreCalls, timepost: 1700000000 + self.__scoreCalls * 100, leaderboard: {id: 'lb1', song: {name: 'Fresh Song'}, difficulty: {difficultyName: 'Expert', stars: 9.5}}});
@@ -1079,8 +1104,81 @@ function watch(page, label) {
 	check('no notification or alarm permissions any more', !perms.includes('notifications') && !perms.includes('alarms'), perms);
 	await site.click('#blp-dock >> text=BeatLeaderPlus stats');
 	await site.waitForSelector('#blp-stats-drawer .blp-tile', {timeout: 10000}).catch(() => null);
-	const tiles = await site.evaluate(() => document.querySelectorAll('#blp-stats-drawer .blp-tile').length);
-	check('profile stats drawer renders tiles and charts', tiles === 4 && (await site.evaluate(() => document.querySelectorAll('#blp-stats-drawer canvas').length)) === 3, tiles);
+	await site.waitForFunction(() => Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).filter(c => Number(c.dataset.marks) > 0).length === 4, null, {timeout: 10000}).catch(() => null);
+	const statsView = await site.evaluate(() => ({
+		tiles: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-tile')).map(t => t.querySelector('.blp-tile-label').textContent + '=' + t.querySelector('.blp-tile-value').textContent),
+		charts: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart h4')).map(e => e.textContent),
+		canvases: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).map(c => c.clientWidth),
+		marks: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).map(c => Number(c.dataset.marks || 0)),
+		basis: document.querySelector('#blp-stats-drawer .blp-drawer-body > p.blp-muted').textContent,
+	}));
+	check('profile stats: 9 tiles (accuracy, FC, stars, top play, mistakes, each hand)', statsView.tiles.length === 9 && statsView.tiles.some(x => /^Left hand=11\d\.\d$/.test(x)) && statsView.tiles.some(x => /^Right hand=11\d\.\d$/.test(x)) && statsView.tiles.some(x => /^Top play=\d[\d,]*pp$/.test(x)), statsView.tiles);
+	check('profile stats: four charts over the 100 top scores', statsView.charts.join('|') === 'Accuracy vs star rating|Accuracy distribution|Accuracy over time|PP over time' && statsView.marks[0] === 100 && statsView.marks[2] === 100 && /100 top PP scores/.test(statsView.basis), statsView);
+	// Hover: the crosshair snaps to the nearest score and the tooltip names it, with its date.
+	const hoverTip = async index => {
+		const canvas = site.locator('#blp-stats-drawer .blp-chart canvas').nth(index);
+		await canvas.scrollIntoViewIfNeeded();
+		const box = await canvas.boundingBox();
+		await site.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5);
+		await sleep(150);
+		return site.evaluate(i => {
+			const tip = document.querySelectorAll('#blp-stats-drawer .blp-tip')[i];
+			return tip && !tip.hidden ? tip.textContent : '';
+		}, index);
+	};
+	const timeTip = await hoverTip(2);
+	check('hovering accuracy over time shows the score, its date and the 10-score average', /Stats Song \d+/.test(timeTip) && /\d{4}/.test(timeTip) && /10-score average/.test(timeTip) && /%/.test(timeTip), timeTip);
+	const barTip = await hoverTip(1);
+	check('hovering a distribution bar shows its range and count', /\d+–\d+%/.test(barTip) && /scores/.test(barTip), barTip);
+	await site.mouse.move(5, 5);
+	// Keyboard: focus the scatter and step through it with the arrow keys.
+	await site.locator('#blp-stats-drawer .blp-chart canvas').nth(0).focus();
+	await site.keyboard.press('ArrowRight');
+	const keyTip = await site.evaluate(() => document.querySelectorAll('#blp-stats-drawer .blp-tip')[0].textContent);
+	check('arrow keys step through the scores of a chart', /Stats Song \d+/.test(keyTip) && /★/.test(keyTip), keyTip);
+	await site.keyboard.press('Escape');
+	if (process.env.BLP_SHOTS) {
+		await hoverTip(2);
+		await site.locator('#blp-stats-drawer').screenshot({path: path.join(process.env.BLP_SHOTS, 'stats-drawer.png')});
+	}
+	// Wider view: the charts sit two by two and redraw at their new size.
+	await site.click('#blp-stats-drawer .blp-wide-btn');
+	await site
+		.waitForFunction(
+			() => {
+				const ws = Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).map(c => c.clientWidth);
+				return document.getElementById('blp-stats-drawer').getBoundingClientRect().width > 700 && ws.every(w => w > 280 && w === ws[0]);
+			},
+			null,
+			{timeout: 5000}
+		)
+		.catch(() => null);
+	const wide = await site.evaluate(() => ({drawer: document.getElementById('blp-stats-drawer').getBoundingClientRect().width, canvases: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).map(c => c.clientWidth)}));
+	check('wider view: wider drawer, charts redrawn two per row', wide.drawer > 700 && wide.canvases.every(w => w > 280 && Math.abs(w - wide.canvases[0]) < 4), [statsView.canvases, wide]);
+	if (process.env.BLP_SHOTS) {
+		await hoverTip(2);
+		await site.screenshot({path: path.join(process.env.BLP_SHOTS, 'stats-wide.png')});
+	}
+	const remembered = await sw.evaluate(() => chrome.storage.local.get('blp_site_ui'));
+	check('wider view is remembered', remembered.blp_site_ui && remembered.blp_site_ui.statsWide === true, remembered.blp_site_ui);
+	await site.click('#blp-stats-drawer .blp-wide-btn');
+	// Recent: ranked scores only (the unranked plays are left out).
+	await site.click('#blp-stats-drawer .blp-seg-btn >> text=Recent');
+	await site.waitForFunction(() => /recent ranked/.test(document.querySelector('#blp-stats-drawer .blp-drawer-body > p.blp-muted').textContent), null, {timeout: 5000}).catch(() => null);
+	await site.waitForFunction(() => Number((document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')[2] || {dataset: {}}).dataset.marks) > 0, null, {timeout: 5000}).catch(() => null);
+	const recentView = await site.evaluate(() => ({basis: document.querySelector('#blp-stats-drawer .blp-drawer-body > p.blp-muted').textContent, marks: Array.from(document.querySelectorAll('#blp-stats-drawer .blp-chart canvas')).map(c => Number(c.dataset.marks || 0))}));
+	check('"Recent" shows the latest ranked scores only', /94 most recent ranked/.test(recentView.basis) && recentView.marks[2] === 94, recentView);
+	// The table: every score, sortable.
+	await site.click('#blp-stats-drawer .blp-scores summary');
+	const table = await site.evaluate(() => {
+		const rows = () => Array.from(document.querySelectorAll('#blp-stats-drawer .blp-scores-table tbody tr'));
+		const acc = () => rows().map(r => parseFloat(r.children[2].textContent));
+		const before = acc();
+		document.querySelectorAll('#blp-stats-drawer .blp-scores-table th button')[2].click();
+		const after = acc();
+		return {rows: rows().length, sortedDesc: after.every((v, i) => !i || after[i - 1] >= v), changed: before.join() !== after.join(), link: rows()[0].querySelector('a').getAttribute('href')};
+	});
+	check('scores table lists every score and sorts by a column', table.rows === 94 && table.sortedDesc && table.changed && /^\/leaderboard\/global\/lb\d+\/1$/.test(table.link), table);
 
 	/* ------------------------------------------------------------ errors */
 	console.log('\n--- console errors mentioning BLP ---');
