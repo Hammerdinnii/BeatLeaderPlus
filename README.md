@@ -1,5 +1,6 @@
 # BeatLeaderPlus
 <img width="640" height="320" alt="BEATLEADERPLUS" src="https://github.com/user-attachments/assets/d06b41cd-b3ac-42cb-b1be-afbde0104760" />
+
 How to install BeatLeaderPlus
 
 BeatLeaderPlus works in Chrome and other Chromium browsers (Edge, Brave, Opera). It isn’t on the Chrome Web Store, so you add it yourself. It takes about a minute.
