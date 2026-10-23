@@ -54,6 +54,12 @@
 		};
 	}
 
+	/** The player's BeatLeader profile ({id, name, avatar, …}); the URL may use an alias. */
+	async function fetchPlayer(playerId) {
+		const p = await BLP.send('fetchJson', {url: `${U.API_BASE}/player/${encodeURIComponent(playerId)}`});
+		return p && p.id !== undefined && p.name ? p : null;
+	}
+
 	async function fetchScores(playerId, sortBy) {
 		const url = `${U.API_BASE}/player/${encodeURIComponent(playerId)}/scores?sortBy=${sortBy}&order=desc&page=1&count=100`;
 		const res = await BLP.send('fetchJson', {url});
@@ -664,10 +670,27 @@
 		requestAnimationFrame(() => state && state.charts.forEach(c => c.render()));
 	}
 
-	async function load(drawer, body, playerId) {
+	/** The drawer's title: the player's name (and avatar) as BeatLeader has it for this ID. */
+	function setTitle(drawer, name, avatar, playerId) {
+		const title = drawer.querySelector('.blp-stats-title');
+		title.textContent = t('site.profileStats');
+		if (!name) return;
+		title.appendChild(document.createTextNode(' · '));
+		if (avatar) title.appendChild(h('img', {class: 'blp-stats-avatar', src: avatar, alt: '', referrerpolicy: 'no-referrer', onerror: e => e.target.remove()}));
+		title.appendChild(h('span', {class: 'blp-stats-name'}, name));
+		title.title = t('site.st.playerId', {id: playerId});
+	}
+
+	async function load(drawer, body, playerId, fallbackName) {
 		body.textContent = t('common.loading');
 		try {
-			const [top, recent] = await Promise.all([fetchScores(playerId, 'pp'), fetchScores(playerId, 'date')]);
+			// Name and real ID from the API: the page's own heading may not be the player's name, and
+			// the URL may hold an alias.
+			const player = await fetchPlayer(playerId).catch(() => null);
+			if (!state || state.playerId !== playerId) return;
+			const id = player ? String(player.id) : playerId;
+			setTitle(drawer, player ? String(player.name) : fallbackName, player && player.avatar, id);
+			const [top, recent] = await Promise.all([fetchScores(id, 'pp'), fetchScores(id, 'date')]);
 			if (!state || state.playerId !== playerId) return;
 			Object.assign(state, {top, recent});
 		} catch (e) {
@@ -710,6 +733,7 @@
 	}
 
 	BLP.profileStats = {
+		/** `name` is only shown if the player's profile can't be loaded from the API. */
 		open(playerId, name) {
 			this.close();
 			const body = h('div', {class: 'blp-drawer-body'});
@@ -719,7 +743,7 @@
 				h(
 					'div',
 					{class: 'blp-drawer-head'},
-					h('strong', null, t('site.profileStats') + (name ? ' · ' + name : '')),
+					h('strong', {class: 'blp-stats-title'}, t('site.profileStats')),
 					h(
 						'span',
 						{class: 'blp-drawer-tools'},
@@ -757,7 +781,7 @@
 			});
 			resizeObserver.observe(body);
 			requestAnimationFrame(() => drawer.classList.add('blp-open'));
-			load(drawer, body, playerId);
+			load(drawer, body, playerId, name);
 		},
 		close() {
 			if (resizeObserver) resizeObserver.disconnect();
