@@ -1,5 +1,44 @@
 # BeatLeaderPlus
 <img width="640" height="320" alt="BEATLEADERPLUS" src="https://github.com/user-attachments/assets/d06b41cd-b3ac-42cb-b1be-afbde0104760" />
+How to install BeatLeaderPlus
+
+BeatLeaderPlus works in Chrome and other Chromium browsers (Edge, Brave, Opera). It isn’t on the Chrome Web Store, so you add it yourself. It takes about a minute.
+
+1. Download it
+Go to https://github.com/Hammerdinnii/BeatLeaderPlus
+Click the green Code button, then Download ZIP.
+2. Unzip it
+Windows: right-click the ZIP and choose Extract All…
+Mac: double-click the ZIP.
+
+You’ll get a folder called BeatLeaderPlus-main. Move it somewhere you’ll keep it, like Documents. The browser loads the extension from this folder, so don’t delete it afterwards.
+
+3. Add it to your browser
+Open a new tab and go to chrome://extensions. In Edge it’s edge://extensions; in Brave, brave://extensions.
+Turn on Developer mode. In Chrome it’s the switch at the top right; in Edge it’s in the left sidebar.
+Click Load unpacked.
+Select the BeatLeaderPlus-main folder (the one with manifest.json directly inside), then click Select Folder.
+
+BeatLeaderPlus now appears in your extensions list, and its options page opens.
+
+4. Pin it (optional)
+
+Click the puzzle-piece icon next to the address bar and pin BeatLeaderPlus. You can also open it anytime with Alt+Shift+B.
+
+5. Use it
+On beatleader.com: click the BL+ button on profile and leaderboard pages for stats, filters and score comparison.
+In the replay viewer: open Settings, then the BL+ tab (or press the ` key, top left on most keyboards).
+Updating
+Download the new ZIP and unzip it.
+Replace the old BeatLeaderPlus-main folder with the new one, in the same place.
+Go to chrome://extensions and click the reload ↻ icon on the BeatLeaderPlus card.
+
+Your settings are kept.
+
+Troubleshooting
+“Manifest file is missing or unreadable”: you picked the wrong folder. Choose the one that has manifest.json directly inside it, not the folder above it.
+A “Disable developer mode extensions” popup when the browser starts: that’s normal for extensions added this way. Just close it, and don’t click Disable.
+Firefox or Safari: not supported, Chromium browsers only.
 
 A Chrome extension that adds options to [BeatLeader](https://beatleader.com) and its web replay viewer.
 
