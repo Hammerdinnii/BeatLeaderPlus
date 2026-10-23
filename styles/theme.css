@@ -518,6 +518,28 @@
 	width: min(1100px, 100vw);
 }
 
+.blp-stats-title {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	white-space: pre; /* keeps the spaces around "·" */
+}
+
+.blp-stats-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.blp-stats-avatar {
+	flex: none;
+	width: 22px;
+	height: 22px;
+	margin-right: 6px;
+	border-radius: 50%;
+	object-fit: cover;
+}
+
 .blp-drawer-tools {
 	display: inline-flex;
 	gap: 6px;
