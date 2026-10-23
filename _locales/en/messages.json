@@ -4,7 +4,7 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "Customizable enhancements for BeatLeader: themes, downloads, score tools and a supercharged web replay viewer (cameras, visuals, overlays, hitsounds, export).",
+    "message": "Themes, profile stats and score tools for BeatLeader, plus cameras, custom sabers and playback controls in its web replay viewer.",
     "description": "Extension description shown in the Chrome Web Store and extensions page"
   },
   "extActionTitle": {
